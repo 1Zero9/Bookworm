@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import Observation
 
 @Observable
@@ -126,6 +127,31 @@ final class Book {
     }
 }
 
+enum ChapterStatus: String, CaseIterable, Codable {
+    case draft      = "Draft"
+    case inProgress = "In Progress"
+    case needsWork  = "Needs Work"
+    case complete   = "Complete"
+
+    var color: Color {
+        switch self {
+        case .draft:      return Color(NSColor.tertiaryLabelColor)
+        case .inProgress: return Color(NSColor.systemBlue)
+        case .needsWork:  return Color(NSColor.systemOrange)
+        case .complete:   return Color(NSColor.systemGreen)
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .draft:      return "circle"
+        case .inProgress: return "pencil.circle.fill"
+        case .needsWork:  return "exclamationmark.circle.fill"
+        case .complete:   return "checkmark.circle.fill"
+        }
+    }
+}
+
 @Observable
 final class Chapter: Identifiable {
     let id: UUID
@@ -134,6 +160,7 @@ final class Chapter: Identifiable {
     var narrationScript: String = ""
     var images: [BookImage] = []
     var order: Int
+    var status: ChapterStatus = .draft
 
     var annotations: [Annotation] = []
 

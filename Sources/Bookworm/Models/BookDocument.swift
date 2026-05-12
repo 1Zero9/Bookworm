@@ -64,6 +64,7 @@ struct ChapterFile: Codable {
     var narrationScript: String
     var order: Int
     var images: [ImageFile]
+    var status: String?
 }
 
 struct ImageFile: Codable {
@@ -153,7 +154,8 @@ extension Chapter {
             rawText: rawText,
             narrationScript: narrationScript,
             order: order,
-            images: images.map { $0.toFile() }
+            images: images.map { $0.toFile() },
+            status: status.rawValue
         )
     }
 
@@ -162,6 +164,7 @@ extension Chapter {
         rawText = file.rawText
         narrationScript = file.narrationScript
         images = file.images.compactMap { BookImage(from: $0) }
+        if let s = file.status { status = ChapterStatus(rawValue: s) ?? .draft }
     }
 }
 

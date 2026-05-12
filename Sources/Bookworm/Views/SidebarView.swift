@@ -101,7 +101,8 @@ struct SidebarView: View {
                                 isRenaming: isRen,
                                 renameText: isRen
                                     ? Binding(get: { renameText }, set: { renameText = $0 })
-                                    : .constant(chapter.title)
+                                    : .constant(chapter.title),
+                                chapterStatus: chapter.status
                             ) {
                                 if renamingID == nil {
                                     book.selectedChapterID = chapter.id
@@ -119,6 +120,16 @@ struct SidebarView: View {
                                     book.selectedChapterID = chapter.id
                                     renameText = chapter.title
                                     renamingID = chapter.id
+                                }
+                                Divider()
+                                Menu("Status") {
+                                    ForEach(ChapterStatus.allCases, id: \.self) { s in
+                                        Button {
+                                            chapter.status = s
+                                        } label: {
+                                            Label(s.rawValue, systemImage: chapter.status == s ? "checkmark" : s.icon)
+                                        }
+                                    }
                                 }
                                 Divider()
                                 Button("Delete", role: .destructive) { book.deleteChapter(chapter) }
@@ -353,6 +364,7 @@ private struct SidebarItem: View {
     let isSelected: Bool
     let isRenaming: Bool
     @Binding var renameText: String
+    var chapterStatus: ChapterStatus? = nil
     let onTap: () -> Void
     let onCommitRename: () -> Void
     @FocusState private var focused: Bool
@@ -384,6 +396,13 @@ private struct SidebarItem: View {
                         .lineLimit(1)
                 }
                 Spacer()
+
+                if let status = chapterStatus {
+                    Image(systemName: status.icon)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(status.color)
+                        .help(status.rawValue)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
