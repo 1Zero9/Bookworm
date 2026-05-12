@@ -14,6 +14,8 @@ final class Book {
     var fileURL: URL?
     var coreLedger = CoreLedger()
     var worldCharacters: [WorldCharacter] = []
+    var relationships: [CharacterRelationship] = []
+    var worldMapPositions: [UUID: CGPoint] = [:]
 
     init() {
         let first = Chapter(title: "Prologue", order: 0)

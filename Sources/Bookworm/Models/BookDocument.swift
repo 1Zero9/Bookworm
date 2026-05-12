@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CoreGraphics
 
 // MARK: - File format
 
@@ -13,6 +14,26 @@ struct BookFile: Codable {
     // v2: World Bible (optional so older files decode without error)
     var coreLedger: CoreLedgerFile?
     var worldCharacters: [WorldCharacterFile]?
+    // v3: Relationship arc map
+    var relationships: [RelationshipFile]?
+    var worldMapPositions: [MapPositionEntry]?
+}
+
+struct RelationshipFile: Codable {
+    var id: UUID
+    var fromID: UUID
+    var toID: UUID
+    var fromName: String?   // human-readable — lets AI tools reference characters by name
+    var toName: String?
+    var label: String
+    var type: String
+    var chapterIntroduced: Int?
+}
+
+struct MapPositionEntry: Codable {
+    var characterID: UUID
+    var x: Double
+    var y: Double
 }
 
 struct CoreLedgerFile: Codable {
@@ -61,7 +82,17 @@ extension Book {
             coverImageData: coverImage?.nsImage.pngData(),
             selectedChapterID: selectedChapterID,
             coreLedger: coreLedger.toFile(),
-            worldCharacters: worldCharacters.map { $0.toFile() }
+            worldCharacters: worldCharacters.map { $0.toFile() },
+            relationships: relationships.map { rel in
+                RelationshipFile(
+                    id: rel.id, fromID: rel.fromID, toID: rel.toID,
+                    fromName: worldCharacters.first { $0.id == rel.fromID }?.name,
+                    toName:   worldCharacters.first { $0.id == rel.toID   }?.name,
+                    label: rel.label, type: rel.type.rawValue,
+                    chapterIntroduced: rel.chapterIntroduced
+                )
+            },
+            worldMapPositions: worldMapPositions.map { MapPositionEntry(characterID: $0.key, x: $0.value.x, y: $0.value.y) }
         )
     }
 
@@ -77,6 +108,10 @@ extension Book {
         selectedChapterID = file.selectedChapterID ?? chapters.first?.id
         if let lf = file.coreLedger { coreLedger.apply(lf) }
         worldCharacters = file.worldCharacters?.map { WorldCharacter(from: $0) } ?? []
+        relationships = (file.relationships ?? []).map { CharacterRelationship(from: $0) }
+        worldMapPositions = Dictionary(
+            uniqueKeysWithValues: (file.worldMapPositions ?? []).map { ($0.characterID, CGPoint(x: $0.x, y: $0.y)) }
+        )
     }
 }
 
@@ -136,6 +171,21 @@ extension BookImage {
         guard let img = NSImage(data: file.data) else { return nil }
         self.init(id: file.id, nsImage: img, caption: file.caption,
                   placement: Placement(rawValue: file.placement) ?? .inline)
+    }
+}
+
+extension CharacterRelationship {
+    func toFile(fromName: String? = nil, toName: String? = nil) -> RelationshipFile {
+        RelationshipFile(id: id, fromID: fromID, toID: toID,
+                         fromName: fromName, toName: toName,
+                         label: label, type: type.rawValue,
+                         chapterIntroduced: chapterIntroduced)
+    }
+    convenience init(from f: RelationshipFile) {
+        self.init(id: f.id, fromID: f.fromID, toID: f.toID,
+                  label: f.label,
+                  type: RelationshipType(rawValue: f.type) ?? .neutral,
+                  chapterIntroduced: f.chapterIntroduced)
     }
 }
 

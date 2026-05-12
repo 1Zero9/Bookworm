@@ -26,9 +26,10 @@ struct EditReviewView: View {
     @State private var selectedChapterForRange: UUID?  = nil
     @State private var pendingAnnotation: PendingAnnotation? = nil
     @State private var scrollRequest:    RedPenScrollRequest? = nil
-    @State private var isAuditing   = false
+    @State private var isAuditing    = false
     @State private var auditError:   String? = nil
     @State private var showAuditError = false
+    @State private var notesWidth: CGFloat = 260
 
     private static let accent = Color(NSColor.systemOrange)
 
@@ -48,13 +49,15 @@ struct EditReviewView: View {
                     selectedChapterID:  $selectedChapterForRange,
                     scrollRequest:      scrollRequest
                 )
-                Divider().background(AppTheme.border)
                 if let chapter = activeChapter {
                     @Bindable var chapter = chapter
+                    PanelDivider {
+                        notesWidth = min(480, max(180, notesWidth - $0))
+                    } onEnd: {}
                     AnnotationsSidebar(chapter: chapter) { ann in
                         scrollRequest = RedPenScrollRequest(chapterID: chapter.id)
                     }
-                    .frame(width: 260)
+                    .frame(width: notesWidth)
                 }
             }
         }
