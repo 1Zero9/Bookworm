@@ -17,6 +17,8 @@ struct BookFile: Codable {
     // v3: Relationship arc map
     var relationships: [RelationshipFile]?
     var worldMapPositions: [MapPositionEntry]?
+    // v4: Annotation archives
+    var annotationArchives: [AnnotationArchive]?
 }
 
 struct RelationshipFile: Codable {
@@ -92,7 +94,8 @@ extension Book {
                     chapterIntroduced: rel.chapterIntroduced
                 )
             },
-            worldMapPositions: worldMapPositions.map { MapPositionEntry(characterID: $0.key, x: $0.value.x, y: $0.value.y) }
+            worldMapPositions: worldMapPositions.map { MapPositionEntry(characterID: $0.key, x: $0.value.x, y: $0.value.y) },
+            annotationArchives: annotationArchives.isEmpty ? nil : annotationArchives
         )
     }
 
@@ -112,6 +115,7 @@ extension Book {
         worldMapPositions = Dictionary(
             uniqueKeysWithValues: (file.worldMapPositions ?? []).map { ($0.characterID, CGPoint(x: $0.x, y: $0.y)) }
         )
+        annotationArchives = file.annotationArchives ?? []
     }
 }
 

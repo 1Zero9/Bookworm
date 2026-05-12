@@ -26,10 +26,12 @@ struct EditReviewView: View {
     @State private var selectedChapterForRange: UUID?  = nil
     @State private var pendingAnnotation: PendingAnnotation? = nil
     @State private var scrollRequest:    RedPenScrollRequest? = nil
-    @State private var isAuditing    = false
-    @State private var auditError:   String? = nil
+    @State private var isAuditing     = false
+    @State private var auditError:    String? = nil
     @State private var showAuditError = false
     @State private var notesWidth: CGFloat = 260
+    @State private var showArchiveSheet  = false
+    @State private var showViewArchives  = false
 
     private static let accent = Color(NSColor.systemOrange)
 
@@ -49,16 +51,16 @@ struct EditReviewView: View {
                     selectedChapterID:  $selectedChapterForRange,
                     scrollRequest:      scrollRequest
                 )
-                if let chapter = activeChapter {
-                    @Bindable var chapter = chapter
-                    PanelDivider {
-                        notesWidth = min(480, max(180, notesWidth - $0))
-                    } onEnd: {}
-                    AnnotationsSidebar(chapter: chapter) { ann in
-                        scrollRequest = RedPenScrollRequest(chapterID: chapter.id)
+                PanelDivider {
+                    notesWidth = min(480, max(180, notesWidth - $0))
+                } onEnd: {}
+                AllChaptersNotesSidebar(
+                    activeChapterID: activeChapterID ?? book.chapters.first?.id,
+                    onSelect: { chapterID in
+                        scrollRequest = RedPenScrollRequest(chapterID: chapterID)
                     }
-                    .frame(width: notesWidth)
-                }
+                )
+                .frame(width: notesWidth)
             }
         }
         .sheet(item: $pendingAnnotation) { pending in
@@ -76,6 +78,12 @@ struct EditReviewView: View {
             Button("OK") {}
         } message: {
             Text(auditError ?? "Unknown error")
+        }
+        .sheet(isPresented: $showArchiveSheet) {
+            ArchiveNotesSheet()
+        }
+        .sheet(isPresented: $showViewArchives) {
+            ViewArchivesSheet()
         }
     }
 
@@ -149,6 +157,8 @@ struct EditReviewView: View {
             .disabled(selectedRange == nil)
             .help("Select text first, then add a note")
 
+            let totalAnnotations = book.chapters.reduce(0) { $0 + $1.annotations.count }
+
             if let chapter = activeChapter {
                 Button { exportMarkdown(chapter: chapter) } label: {
                     HStack(spacing: 4) {
@@ -162,15 +172,30 @@ struct EditReviewView: View {
                 .disabled(chapter.annotations.isEmpty)
                 .opacity(chapter.annotations.isEmpty ? 0.4 : 1)
                 .help("Export annotated text as Markdown")
+            }
 
-                if !chapter.annotations.isEmpty {
-                    Button { chapter.annotations.removeAll() } label: {
-                        Image(systemName: "trash").font(.system(size: 12))
-                            .foregroundStyle(AppTheme.textSecondary).padding(6)
-                            .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            if totalAnnotations > 0 {
+                Button { showArchiveSheet = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "archivebox").font(.system(size: 11))
+                        Text("Archive Notes").font(.system(size: 12, weight: .medium))
                     }
-                    .buttonStyle(.plain).help("Clear all notes for this chapter")
+                    .foregroundStyle(AppTheme.accentNarrate)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(AppTheme.accentNarrate.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
                 }
+                .buttonStyle(.plain)
+                .help("Snapshot all notes before rewriting — they won't be lost")
+            }
+
+            if !book.annotationArchives.isEmpty {
+                Button { showViewArchives = true } label: {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textSecondary).padding(6)
+                        .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .help("View archived notes from previous drafts")
             }
         }
         .padding(.horizontal, 14)
@@ -366,7 +391,10 @@ private struct ContinuousAnnotatedView: View {
             .max(by: { $0.value < $1.value })
         else { return }
         if activeChapterID != id {
-            withAnimation(.easeInOut(duration: 0.22)) { activeChapterID = id }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                activeChapterID = id
+                book.visibleChapterID = id   // keeps sidebar in sync
+            }
         }
     }
 }
@@ -657,5 +685,324 @@ private struct AddNoteSheet: View {
         .padding(20)
         .frame(width: 400)
         .background(AppTheme.surface)
+    }
+}
+
+// MARK: - All-chapters notes sidebar
+
+private struct AllChaptersNotesSidebar: View {
+    @Environment(Book.self) private var book
+    let activeChapterID: UUID?
+    let onSelect: (UUID) -> Void
+
+    private var totalCount: Int { book.chapters.reduce(0) { $0 + $1.annotations.count } }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("NOTES")
+                    .font(.system(size: 10, weight: .bold)).tracking(1)
+                    .foregroundStyle(AppTheme.textSecondary)
+                Spacer()
+                if totalCount > 0 {
+                    Text("\(totalCount)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+            .background(AppTheme.background)
+
+            Divider().background(AppTheme.border)
+
+            if totalCount == 0 {
+                VStack(spacing: 10) {
+                    Image(systemName: "pencil.and.ruler")
+                        .font(.system(size: 28))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
+                    Text("Select text, then tap\n\"Add Note\" to annotate")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppTheme.background)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                            ForEach(book.chapters) { chapter in
+                                if !chapter.annotations.isEmpty {
+                                    Section {
+                                        ForEach(chapter.annotations) { ann in
+                                            AnnotationRow(
+                                                annotation: ann,
+                                                rawText: chapter.rawText,
+                                                onSelect: { onSelect(chapter.id) },
+                                                onDelete: {
+                                                    chapter.annotations.removeAll { $0.id == ann.id }
+                                                }
+                                            )
+                                        }
+                                    } header: {
+                                        HStack {
+                                            Text(chapter.title)
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(
+                                                    activeChapterID == chapter.id
+                                                        ? Color(NSColor.systemOrange)
+                                                        : AppTheme.textSecondary.opacity(0.6)
+                                                )
+                                                .tracking(0.5)
+                                            Spacer()
+                                            Text("\(chapter.annotations.count)")
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .frame(height: 26)
+                                        .background(AppTheme.sidebar)
+                                        .id("header-\(chapter.id)")
+                                    }
+                                }
+                            }
+                            Color.clear.frame(height: 16)
+                        }
+                    }
+                    .background(AppTheme.background)
+                    .onChange(of: activeChapterID) { _, id in
+                        guard let id else { return }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo("header-\(id)", anchor: .top)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Archive notes sheet
+
+private struct ArchiveNotesSheet: View {
+    @Environment(Book.self) private var book
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var draftLabel = ""
+    @State private var clearAfter = true
+
+    private var totalCount: Int { book.chapters.reduce(0) { $0 + $1.annotations.count } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Archive Notes")
+                .font(AppTheme.editorialFont(17, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary)
+
+            Text("Takes a snapshot of all \(totalCount) note\(totalCount == 1 ? "" : "s") across \(book.chapters.filter { !$0.annotations.isEmpty }.count) chapter\(book.chapters.filter { !$0.annotations.isEmpty }.count == 1 ? "" : "s"). Archived notes are preserved even after you rewrite.")
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LABEL THIS DRAFT").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentNarrate).tracking(0.8)
+                TextField("e.g. Draft 1, Before rewrite, Chapter pass…", text: $draftLabel)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(9)
+                    .background(AppTheme.border.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            Toggle("Clear active notes after archiving", isOn: $clearAfter)
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.textSecondary)
+
+            Divider().background(AppTheme.border)
+
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.plain).foregroundStyle(AppTheme.textSecondary)
+                Spacer()
+                Button("Archive") {
+                    let label = draftLabel.isEmpty ? "Draft \(book.annotationArchives.isEmpty ? 1 : 2)" : draftLabel
+                    let now = Date()
+                    for chapter in book.chapters {
+                        let ns = chapter.rawText as NSString
+                        for ann in chapter.annotations {
+                            let loc = min(ann.start, ns.length)
+                            let len = min(ann.end - ann.start, ns.length - loc)
+                            let snippet = len > 0 ? ns.substring(with: NSRange(location: loc, length: min(len, 120))) : ""
+                            book.annotationArchives.append(AnnotationArchive(
+                                draftLabel:   label,
+                                chapterTitle: chapter.title,
+                                snippet:      snippet,
+                                note:         ann.note,
+                                tag:          ann.tag,
+                                archivedAt:   now
+                            ))
+                        }
+                        if clearAfter { chapter.annotations.removeAll() }
+                    }
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16).padding(.vertical, 7)
+                .background(AppTheme.accentNarrate, in: RoundedRectangle(cornerRadius: 8))
+                .disabled(totalCount == 0)
+            }
+        }
+        .padding(24)
+        .frame(width: 400)
+        .background(AppTheme.surface)
+    }
+}
+
+// MARK: - View archives sheet
+
+private struct ViewArchivesSheet: View {
+    @Environment(Book.self) private var book
+    @Environment(\.dismiss) private var dismiss
+
+    private var grouped: [(label: String, date: Date, items: [AnnotationArchive])] {
+        var seen: [(String, Date)] = []
+        var result: [(label: String, date: Date, items: [AnnotationArchive])] = []
+        for archive in book.annotationArchives {
+            let key = archive.draftLabel
+            if !seen.contains(where: { $0.0 == key }) {
+                seen.append((key, archive.archivedAt))
+                let group = book.annotationArchives.filter { $0.draftLabel == key }
+                result.append((key, archive.archivedAt, group))
+            }
+        }
+        return result.sorted { $0.date > $1.date }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Archived Notes")
+                    .font(AppTheme.editorialFont(17, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24).padding(.vertical, 16)
+
+            Divider().background(AppTheme.border)
+
+            if grouped.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 36))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.25))
+                    Text("No archived notes yet")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        ForEach(grouped, id: \.label) { group in
+                            Section {
+                                ForEach(group.items) { archive in
+                                    ArchivedNoteRow(archive: archive)
+                                }
+                            } header: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(group.label)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(AppTheme.textPrimary)
+                                        Text(group.date.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                                    }
+                                    Spacer()
+                                    Text("\(group.items.count) note\(group.items.count == 1 ? "" : "s")")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                                    Button {
+                                        book.annotationArchives.removeAll { $0.draftLabel == group.label }
+                                    } label: {
+                                        Image(systemName: "trash").font(.system(size: 10))
+                                            .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                                            .padding(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Delete this archive group")
+                                }
+                                .padding(.horizontal, 20).padding(.vertical, 10)
+                                .background(AppTheme.sidebar)
+                            }
+                        }
+                        Color.clear.frame(height: 16)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .frame(width: 520, height: 560)
+        .background(AppTheme.surface)
+    }
+}
+
+private struct ArchivedNoteRow: View {
+    let archive: AnnotationArchive
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Rectangle().fill(archive.tag.color.opacity(0.7)).frame(width: 3, height: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(archive.tag.rawValue)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(archive.tag.color)
+                        Text("·")
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
+                        Text(archive.chapterTitle)
+                            .font(.system(size: 9))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                    }
+                    if !archive.snippet.isEmpty {
+                        Text("\"\(archive.snippet)\(archive.snippet.count >= 120 ? "…" : "")\"")
+                            .font(.system(size: 11, design: .serif)).italic()
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .lineLimit(expanded ? nil : 2)
+                    }
+                }
+                Spacer()
+                if !archive.note.isEmpty {
+                    Button { expanded.toggle() } label: {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if expanded && !archive.note.isEmpty {
+                Text(archive.note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .padding(.leading, 9)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(AppTheme.surface)
+        Divider().background(AppTheme.border).padding(.leading, 20)
     }
 }

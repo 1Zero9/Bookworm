@@ -16,7 +16,19 @@ struct Annotation: Identifiable {
     var nsRange: NSRange { NSRange(location: start, length: max(0, end - start)) }
 }
 
-enum AnnotationTag: String, CaseIterable {
+// MARK: - Archive
+
+struct AnnotationArchive: Identifiable, Codable {
+    var id:           UUID    = UUID()
+    var draftLabel:   String
+    var chapterTitle: String
+    var snippet:      String   // text at the time of archiving
+    var note:         String
+    var tag:          AnnotationTag
+    var archivedAt:   Date
+}
+
+enum AnnotationTag: String, CaseIterable, Codable {
     case note   = "Note"
     case issue  = "Issue"
     case strong = "Strong"

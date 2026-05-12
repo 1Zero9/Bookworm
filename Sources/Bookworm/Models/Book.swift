@@ -16,6 +16,7 @@ final class Book {
     var worldCharacters: [WorldCharacter] = []
     var relationships: [CharacterRelationship] = []
     var worldMapPositions: [UUID: CGPoint] = [:]
+    var annotationArchives: [AnnotationArchive] = []
 
     init() {
         let first = Chapter(title: "Prologue", order: 0)
