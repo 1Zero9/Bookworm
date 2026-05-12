@@ -17,6 +17,7 @@ final class Book {
     var relationships: [CharacterRelationship] = []
     var worldMapPositions: [UUID: CGPoint] = [:]
     var annotationArchives: [AnnotationArchive] = []
+    var lastSavedAt: Date? = nil
 
     init() {
         let first = Chapter(title: "Prologue", order: 0)
@@ -103,6 +104,7 @@ final class Book {
         do {
             let data = try JSONEncoder().encode(toFile())
             try data.write(to: url, options: .atomic)
+            lastSavedAt = Date()
             RecentBooksStore.shared.add(url: url, title: title, author: author)
         } catch {
             showAlert("Could not save: \(error.localizedDescription)")

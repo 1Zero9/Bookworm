@@ -252,34 +252,76 @@ struct WorldBibleView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
-            // Try our own strict round-trip format first.
+            // Try strict round-trip format first.
             if let pkg = try? JSONDecoder().decode(WorldBiblePackage.self, from: data) {
-                book.coreLedger.apply(pkg.coreLedger)
-                book.worldCharacters = pkg.characters.map { WorldCharacter(from: $0) }
+                mergeCoreLedger(pkg.coreLedger)
+                mergeCharacters(pkg.characters.map { WorldCharacter(from: $0) })
                 if let rels = pkg.relationships {
-                    book.relationships = rels.map { CharacterRelationship(from: $0) }
+                    mergeRelationships(rels.map { CharacterRelationship(from: $0) })
                 }
                 if let positions = pkg.worldMapPositions {
-                    book.worldMapPositions = Dictionary(
-                        uniqueKeysWithValues: positions.map { ($0.characterID, CGPoint(x: $0.x, y: $0.y)) }
-                    )
+                    for p in positions {
+                        book.worldMapPositions[p.characterID] = CGPoint(x: p.x, y: p.y)
+                    }
                 }
                 return
             }
-            // Fall back to flexible decoder that handles external / AI-generated JSON.
+            // Fall back to flexible decoder for external / AI-generated JSON.
             let flex = try JSONDecoder().decode(FlexWorldBible.self, from: data)
-            if let lf = flex.coreLedger {
-                book.coreLedger.apply(lf.toCoreFile())
-            }
-            book.worldCharacters = (flex.characters ?? [])
-                .enumerated()
-                .map { i, fc in fc.toWorldCharacter(index: i) }
+            if let lf = flex.coreLedger { mergeCoreLedgerFlex(lf) }
+            mergeCharacters((flex.characters ?? []).enumerated().map { i, fc in fc.toWorldCharacter(index: i) })
             if let flexRels = flex.relationships {
-                book.relationships = flexRels.compactMap { $0.resolve(against: book.worldCharacters) }
+                mergeRelationships(flexRels.compactMap { $0.resolve(against: book.worldCharacters) })
             }
         } catch {
             importError = error.localizedDescription
             showImportError = true
+        }
+    }
+
+    // Only overwrite a Core Ledger field if the incoming value is non-empty.
+    private func mergeCoreLedger(_ f: CoreLedgerFile) {
+        if !f.genre.isEmpty              { book.coreLedger.genre              = f.genre }
+        if !f.tone.isEmpty               { book.coreLedger.tone               = f.tone }
+        if !f.spellingConvention.isEmpty { book.coreLedger.spellingConvention = f.spellingConvention }
+        if !f.techOrMagicSystem.isEmpty  { book.coreLedger.techOrMagicSystem  = f.techOrMagicSystem }
+        if !f.hardRules.isEmpty          { book.coreLedger.hardRules          = f.hardRules }
+        if !f.styleNotes.isEmpty         { book.coreLedger.styleNotes         = f.styleNotes }
+    }
+
+    private func mergeCoreLedgerFlex(_ lf: FlexWorldBible.FlexLedger) {
+        if let v = lf.genre,              !v.isEmpty { book.coreLedger.genre              = v }
+        if let v = lf.tone,               !v.isEmpty { book.coreLedger.tone               = v }
+        if let v = lf.spellingConvention, !v.isEmpty { book.coreLedger.spellingConvention = v }
+        if let v = lf.techOrMagicSystem,  !v.isEmpty { book.coreLedger.techOrMagicSystem  = v }
+        if let v = lf.hardRules,          !v.isEmpty { book.coreLedger.hardRules          = v }
+        if let v = lf.styleNotes,         !v.isEmpty { book.coreLedger.styleNotes         = v }
+    }
+
+    // Upsert by name: update existing character's non-empty fields, or append if new.
+    private func mergeCharacters(_ incoming: [WorldCharacter]) {
+        for c in incoming {
+            if let existing = book.worldCharacters.first(where: {
+                $0.name.lowercased() == c.name.lowercased()
+            }) {
+                if !c.physicalDescription.isEmpty  { existing.physicalDescription  = c.physicalDescription }
+                if !c.psychologicalProfile.isEmpty { existing.psychologicalProfile = c.psychologicalProfile }
+                if !c.personalVoice.isEmpty        { existing.personalVoice        = c.personalVoice }
+                if !c.notes.isEmpty                { existing.notes                = c.notes }
+            } else {
+                c.order = book.worldCharacters.count
+                book.worldCharacters.append(c)
+            }
+        }
+    }
+
+    // Add relationship only if this exact fromID→toID pair doesn't already exist.
+    private func mergeRelationships(_ incoming: [CharacterRelationship]) {
+        for rel in incoming {
+            guard !book.relationships.contains(where: {
+                $0.fromID == rel.fromID && $0.toID == rel.toID
+            }) else { continue }
+            book.relationships.append(rel)
         }
     }
 }

@@ -30,8 +30,10 @@ struct EditReviewView: View {
     @State private var auditError:    String? = nil
     @State private var showAuditError = false
     @State private var notesWidth: CGFloat = 260
-    @State private var showArchiveSheet  = false
-    @State private var showViewArchives  = false
+    @State private var showArchiveSheet    = false
+    @State private var showViewArchives   = false
+    @State private var showImportResult   = false
+    @State private var importResultMsg    = ""
 
     private static let accent = Color(NSColor.systemOrange)
 
@@ -84,6 +86,9 @@ struct EditReviewView: View {
         }
         .sheet(isPresented: $showViewArchives) {
             ViewArchivesSheet()
+        }
+        .alert(importResultMsg, isPresented: $showImportResult) {
+            Button("OK") {}
         }
     }
 
@@ -174,6 +179,17 @@ struct EditReviewView: View {
                 .help("Export annotated text as Markdown")
             }
 
+            Button { importMarkdown() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.doc").font(.system(size: 11))
+                    Text("Import MD").font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(AppTheme.textSecondary).padding(.horizontal, 10).padding(.vertical, 5)
+                .background(AppTheme.border.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+            .help("Re-import annotations from an exported Markdown file")
+
             if totalAnnotations > 0 {
                 Button { showArchiveSheet = true } label: {
                     HStack(spacing: 4) {
@@ -240,6 +256,96 @@ struct EditReviewView: View {
         } catch {
             let alert = NSAlert(); alert.messageText = "Could not export: \(error.localizedDescription)"; alert.runModal()
         }
+    }
+
+    // MARK: - Import
+
+    private func importMarkdown() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Edit Notes"
+        panel.allowedContentTypes = [UTType.plainText]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            importResultMsg = "Could not read the file."; showImportResult = true; return
+        }
+
+        // Title line: "# Chapter Title — Edit Notes"
+        let lines = content.components(separatedBy: "\n")
+        guard let titleLine = lines.first(where: { $0.hasPrefix("# ") }),
+              let dashRange = titleLine.dropFirst(2).range(of: " — Edit Notes") else {
+            importResultMsg = "File doesn't look like a Bookworm export."
+            showImportResult = true; return
+        }
+        let chapterTitle = String(titleLine.dropFirst(2)[..<dashRange.lowerBound])
+
+        guard let chapter = book.chapters.first(where: { $0.title == chapterTitle }) else {
+            importResultMsg = "No chapter named \"\(chapterTitle)\" found in this book."
+            showImportResult = true; return
+        }
+
+        // Collect annotated spans: ==full text==`[N]`
+        let nsContent = content as NSString
+        var spans: [Int: String] = [:]
+        let spanRx = try! NSRegularExpression(pattern: #"==(.+?)==`\[(\d+)\]`"#,
+                                              options: .dotMatchesLineSeparators)
+        for m in spanRx.matches(in: content, range: NSRange(location: 0, length: nsContent.length)) {
+            guard let tR = Range(m.range(at: 1), in: content),
+                  let iR = Range(m.range(at: 2), in: content),
+                  let idx = Int(content[iR]) else { continue }
+            spans[idx] = String(content[tR])
+        }
+
+        // Parse notes section for tag + note text
+        struct NoteInfo { var tag: AnnotationTag = .note; var note = "" }
+        var noteInfos: [Int: NoteInfo] = [:]
+        let headerRx = try! NSRegularExpression(pattern: #"\*\*\[(\d+)\]\s+(\w+)\*\*"#)
+        var inNotes = false
+        var curIdx: Int? = nil
+
+        for line in lines {
+            if line.hasPrefix("## Notes") { inNotes = true; continue }
+            guard inNotes else { continue }
+            let nsLine = line as NSString
+            if let m = headerRx.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)),
+               let iR = Range(m.range(at: 1), in: line),
+               let tR = Range(m.range(at: 2), in: line),
+               let idx = Int(line[iR]) {
+                let tagStr = String(line[tR])
+                noteInfos[idx] = NoteInfo(tag: AnnotationTag.allCases.first { $0.rawValue == tagStr } ?? .note)
+                curIdx = idx
+            } else if line.hasPrefix("> "), let idx = curIdx {
+                noteInfos[idx]?.note = String(line.dropFirst(2))
+            }
+        }
+
+        // Match spans back into current chapter text
+        let chNS = chapter.rawText as NSString
+        var imported = 0
+        for (idx, span) in spans.sorted(by: { $0.key < $1.key }) {
+            let found = chNS.range(of: span, options: [], range: NSRange(location: 0, length: chNS.length))
+            guard found.location != NSNotFound else { continue }
+            // Skip duplicates
+            if chapter.annotations.contains(where: {
+                $0.start == found.location && $0.end == found.location + found.length
+            }) { continue }
+            let info = noteInfos[idx] ?? NoteInfo()
+            chapter.annotations.append(Annotation(
+                start: found.location,
+                end:   found.location + found.length,
+                note:  info.note,
+                tag:   info.tag
+            ))
+            imported += 1
+        }
+
+        if imported == 0 {
+            importResultMsg = "No matching text found — the chapter may have changed since export."
+        } else {
+            chapter.annotations.sort { $0.start < $1.start }
+            importResultMsg = "Imported \(imported) annotation\(imported == 1 ? "" : "s") into \"\(chapterTitle)\"."
+        }
+        showImportResult = true
     }
 
     private func buildMarkdown(chapter: Chapter) -> String {

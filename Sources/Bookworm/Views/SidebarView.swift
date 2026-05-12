@@ -407,12 +407,21 @@ struct SaveButton: View {
     let book: Book
     @State private var isHovered = false
 
+    private var savedLabel: String {
+        guard let date = book.lastSavedAt else { return "Save" }
+        let interval = Date().timeIntervalSince(date)
+        if interval < 60 { return "Saved just now" }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        return "Saved \(fmt.string(from: date))"
+    }
+
     var body: some View {
         Button { book.save() } label: {
             HStack(spacing: 4) {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 11, weight: .medium))
-                Text("Save")
+                Text(savedLabel)
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(isHovered ? AppTheme.accentWrite : AppTheme.textSecondary)
