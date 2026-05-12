@@ -280,10 +280,11 @@ private struct ContinuousAnnotatedView: View {
     var scrollRequest: RedPenScrollRequest?
 
     @AppStorage("bw.readingMode") private var readingMode = true
-    @State private var heights:      [UUID: CGFloat] = [:]
-    @State private var chapterTops:  [UUID: CGFloat] = [:]
-    @State private var suppressTracking = false
-    @State private var lastScrollNonce: UUID? = nil
+    @State private var heights:        [UUID: CGFloat] = [:]
+    @State private var chapterTops:    [UUID: CGFloat] = [:]
+    @State private var suppressTracking  = false
+    @State private var lastScrollNonce: UUID?   = nil
+    @State private var lastViewportTop: CGFloat = 0
 
     var body: some View {
         GeometryReader { outer in
@@ -318,10 +319,16 @@ private struct ContinuousAnnotatedView: View {
         }
         .onPreferenceChange(RPScrollOffsetKey.self) { offset in
             guard !suppressTracking else { return }
+            lastViewportTop = -offset
             updateVisible(viewportTop: -offset)
         }
         .onPreferenceChange(RPChapterTopKey.self) { tops in
             chapterTops = tops
+            guard !suppressTracking else { return }
+            DispatchQueue.main.async { updateVisible(viewportTop: lastViewportTop) }
+        }
+        .onAppear {
+            activeChapterID = book.visibleChapterID ?? book.selectedChapterID ?? book.chapters.first?.id
         }
         .background(readingMode ? AppTheme.background : Color(NSColor.textBackgroundColor))
     }
