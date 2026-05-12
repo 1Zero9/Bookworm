@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Bookworm}",
+            "name": "Debug Bookworm",
+            "target": "Bookworm",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Bookworm"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Bookworm}",
+            "name": "Release Bookworm",
+            "target": "Bookworm",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Bookworm"
+        }
+    ]
+}
