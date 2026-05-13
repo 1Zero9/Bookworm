@@ -137,7 +137,7 @@ enum AppTheme {
     }()
 
     // MARK: - Version
-    static let version = "v2.2"
+    static let version = "v2.3"
 }
 
 // MARK: - Color hex init

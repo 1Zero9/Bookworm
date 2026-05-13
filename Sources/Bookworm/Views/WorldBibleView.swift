@@ -419,6 +419,7 @@ private struct CharacterVaultView: View {
     @Bindable var book: Book
     @State private var selectedID: UUID? = nil
     @State private var listWidth: CGFloat = 210
+    @State private var portraitPanelWidth: CGFloat = 220
     @State private var activeKind: WorldEntityKind = .character
 
     private var filteredEntities: [WorldCharacter] {
@@ -430,6 +431,8 @@ private struct CharacterVaultView: View {
         return filteredEntities.first { $0.id == id }
     }
 
+    private var hasPortrait: Bool { selectedChar?.hasImage == true }
+
     var body: some View {
         HStack(spacing: 0) {
             entityList
@@ -437,8 +440,59 @@ private struct CharacterVaultView: View {
                 listWidth = min(340, max(160, listWidth + $0))
             } onEnd: {}
             entityDetail
+            // Always in the hierarchy so PanelDivider keeps its @State lastX mid-drag
+            PanelDivider {
+                portraitPanelWidth = min(400, max(160, portraitPanelWidth - $0))
+            } onEnd: {}
+            .opacity(hasPortrait ? 1 : 0)
+            .allowsHitTesting(hasPortrait)
+            ZStack {
+                if let char = selectedChar, char.hasImage {
+                    portraitPanelContent(for: char)
+                }
+            }
+            .frame(width: hasPortrait ? portraitPanelWidth : 0)
+            .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func portraitPanelContent(for char: WorldCharacter) -> some View {
+        let isCircle = char.kind == .character
+        VStack(alignment: .leading, spacing: 16) {
+            Text(isCircle ? "PORTRAIT" : "IMAGE")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+
+            Image(nsImage: char.resolvedImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 16)))
+                .overlay {
+                    if isCircle { Circle().stroke(AppTheme.border, lineWidth: 1) }
+                    else { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1) }
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ID")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentWorld)
+                    .tracking(0.8)
+                Text(char.id.uuidString)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(AppTheme.surface)
     }
 
     // MARK: List
@@ -596,64 +650,54 @@ private struct CharacterRow: View {
 
 private struct CharacterDetailView: View {
     @Bindable var character: WorldCharacter
-    @State private var portraitPanelWidth: CGFloat = 220
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Portrait / image controls
-                    portraitSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Portrait / image controls
+                portraitSection
 
-                    // Name
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("NAME")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(AppTheme.accentWorld)
-                            .tracking(0.8)
-                        TextField(character.kind == .character ? "Character name…" : "Name…",
-                                  text: $character.name)
-                            .textFieldStyle(.plain)
-                            .font(AppTheme.editorialFont(18, weight: .semibold))
-                            .foregroundStyle(AppTheme.textPrimary)
-                    }
-
-                    Divider().background(AppTheme.border)
-
-                    if character.kind == .character {
-                        CharDetailField(label: "Physical Description",
-                                        placeholder: "Height, build, hair, eyes, distinguishing features…",
-                                        text: $character.physicalDescription)
-                        CharDetailField(label: "Psychology",
-                                        placeholder: "Core traits, fears, desires, internal conflicts…",
-                                        text: $character.psychologicalProfile)
-                        CharDetailField(label: "Voice & Speech",
-                                        placeholder: "How they talk, verbal tics, vocabulary, accent…",
-                                        text: $character.personalVoice)
-                        CharDetailField(label: "Notes",
-                                        placeholder: "Backstory, relationships, arc, secrets…",
-                                        text: $character.notes)
-                    } else {
-                        CharDetailField(label: "Description",
-                                        placeholder: "Appearance, atmosphere, key sensory details…",
-                                        text: $character.physicalDescription)
-                        CharDetailField(label: "Notes",
-                                        placeholder: "History, significance, connections to the story…",
-                                        text: $character.notes)
-                    }
-
-                    // Stats
-                    statsSection
+                // Name
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("NAME")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.accentWorld)
+                        .tracking(0.8)
+                    TextField(character.kind == .character ? "Character name…" : "Name…",
+                              text: $character.name)
+                        .textFieldStyle(.plain)
+                        .font(AppTheme.editorialFont(18, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
                 }
-                .padding(24)
-            }
 
-            if character.hasImage {
-                PanelDivider {
-                    portraitPanelWidth = min(400, max(160, portraitPanelWidth - $0))
-                } onEnd: {}
-                portraitPreviewPanel
+                Divider().background(AppTheme.border)
+
+                if character.kind == .character {
+                    CharDetailField(label: "Physical Description",
+                                    placeholder: "Height, build, hair, eyes, distinguishing features…",
+                                    text: $character.physicalDescription)
+                    CharDetailField(label: "Psychology",
+                                    placeholder: "Core traits, fears, desires, internal conflicts…",
+                                    text: $character.psychologicalProfile)
+                    CharDetailField(label: "Voice & Speech",
+                                    placeholder: "How they talk, verbal tics, vocabulary, accent…",
+                                    text: $character.personalVoice)
+                    CharDetailField(label: "Notes",
+                                    placeholder: "Backstory, relationships, arc, secrets…",
+                                    text: $character.notes)
+                } else {
+                    CharDetailField(label: "Description",
+                                    placeholder: "Appearance, atmosphere, key sensory details…",
+                                    text: $character.physicalDescription)
+                    CharDetailField(label: "Notes",
+                                    placeholder: "History, significance, connections to the story…",
+                                    text: $character.notes)
+                }
+
+                // Stats
+                statsSection
             }
+            .padding(24)
         }
         .background(AppTheme.surface)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -708,44 +752,6 @@ private struct CharacterDetailView: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    @ViewBuilder
-    private var portraitPreviewPanel: some View {
-        let isCircle = character.kind == .character
-        VStack(spacing: 16) {
-            Text(isCircle ? "PORTRAIT" : "IMAGE")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppTheme.accentWorld)
-                .tracking(0.8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Image(nsImage: character.resolvedImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .clipShape(isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 16)))
-                .overlay {
-                    if isCircle { Circle().stroke(AppTheme.border, lineWidth: 1) }
-                    else { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1) }
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ID")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentWorld)
-                    .tracking(0.8)
-                Text(character.id.uuidString)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
-                    .textSelection(.enabled)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-        }
-        .padding(20)
-        .frame(width: portraitPanelWidth)
     }
 
     // MARK: Portrait section
