@@ -60,4 +60,22 @@ enum AnnotationTag: String, CaseIterable, Codable {
         case .query:  return "questionmark"
         }
     }
+
+    var label: String {
+        switch self {
+        case .note:   return "Note"
+        case .issue:  return "Issue"
+        case .strong: return "Like"
+        case .query:  return "Query"
+        }
+    }
+
+    var labelIcon: String {
+        switch self {
+        case .note:   return "pencil"
+        case .issue:  return "exclamationmark.triangle"
+        case .strong: return "hand.thumbsup"
+        case .query:  return "questionmark"
+        }
+    }
 }

@@ -20,10 +20,20 @@ final class Book {
     var annotationArchives: [AnnotationArchive] = []
     var lastSavedAt: Date? = nil
 
+    @ObservationIgnored private var autoSaveTimer: Timer?
+
     init() {
         let first = Chapter(title: "Prologue", order: 0)
         self.chapters = [first]
         self.selectedChapterID = first.id
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
+            guard let self, NSApp.isActive, self.fileURL != nil else { return }
+            self.save()
+        }
+    }
+
+    deinit {
+        autoSaveTimer?.invalidate()
     }
 
     func addWorldCharacter() {

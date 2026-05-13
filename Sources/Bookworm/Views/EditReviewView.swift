@@ -51,7 +51,21 @@ struct EditReviewView: View {
                     activeChapterID:    $activeChapterID,
                     selectedRange:      $selectedRange,
                     selectedChapterID:  $selectedChapterForRange,
-                    scrollRequest:      scrollRequest
+                    scrollRequest:      scrollRequest,
+                    onCommentRequested: { chID, range in
+                        guard let chapter = book.chapters.first(where: { $0.id == chID }) else { return }
+                        pendingAnnotation = PendingAnnotation(chapter: chapter, range: range)
+                    },
+                    onDirectAnnotate: { chID, range, tag in
+                        guard let chapter = book.chapters.first(where: { $0.id == chID }) else { return }
+                        chapter.annotations.append(Annotation(
+                            start: range.location,
+                            end:   range.location + range.length,
+                            note:  "",
+                            tag:   tag
+                        ))
+                        chapter.annotations.sort { $0.start < $1.start }
+                    }
                 )
                 PanelDivider {
                     notesWidth = min(480, max(180, notesWidth - $0))
@@ -66,12 +80,12 @@ struct EditReviewView: View {
             }
         }
         .sheet(item: $pendingAnnotation) { pending in
-            AddNoteSheet(range: pending.range, text: pending.chapter.rawText) { note, tag in
+            AddNoteSheet(range: pending.range, text: pending.chapter.rawText) { note in
                 pending.chapter.annotations.append(Annotation(
                     start: pending.range.location,
                     end:   pending.range.location + pending.range.length,
                     note:  note,
-                    tag:   tag
+                    tag:   .note
                 ))
                 pending.chapter.annotations.sort { $0.start < $1.start }
             }
@@ -384,6 +398,8 @@ private struct ContinuousAnnotatedView: View {
     @Binding var selectedRange:     NSRange?
     @Binding var selectedChapterID: UUID?
     var scrollRequest: RedPenScrollRequest?
+    var onCommentRequested: (UUID, NSRange) -> Void = { _, _ in }
+    var onDirectAnnotate: (UUID, NSRange, AnnotationTag) -> Void = { _, _, _ in }
 
     @AppStorage("bw.readingMode") private var readingMode = true
     @State private var heights:        [UUID: CGFloat] = [:]
@@ -457,7 +473,9 @@ private struct ContinuousAnnotatedView: View {
                 onSelectionChange: { chID, range in
                     selectedRange = range
                     if range != nil { selectedChapterID = chID }
-                }
+                },
+                onCommentRequested: onCommentRequested,
+                onDirectAnnotate:   onDirectAnnotate
             )
             .frame(width: colWidth)
             .frame(height: max(200, heights[chapter.id] ?? 400))
@@ -521,6 +539,8 @@ private struct AutoAnnotatedTextEditor: NSViewRepresentable {
     var availableWidth: CGFloat
     @Binding var measuredHeight: CGFloat
     var onSelectionChange: (UUID, NSRange?) -> Void = { _, _ in }
+    var onCommentRequested: (UUID, NSRange) -> Void = { _, _ in }
+    var onDirectAnnotate: (UUID, NSRange, AnnotationTag) -> Void = { _, _, _ in }
 
     func makeNSView(context: Context) -> AutoTextView {
         let tv = AutoTextView()
@@ -583,16 +603,87 @@ private struct AutoAnnotatedTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: AutoAnnotatedTextEditor
         weak var textView: AutoTextView?
+        var popover: NSPopover?
+        var popoverTask: DispatchWorkItem?
 
         init(_ parent: AutoAnnotatedTextEditor) { self.parent = parent }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             let range = tv.selectedRange()
+            popoverTask?.cancel()
+            if range.length > 0 {
+                let task = DispatchWorkItem { [weak self, weak tv] in
+                    guard let self, let tv else { return }
+                    self.showSelectionPopover(textView: tv, range: range)
+                }
+                popoverTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: task)
+            } else {
+                popover?.close()
+                popover = nil
+            }
             DispatchQueue.main.async {
                 self.parent.onSelectionChange(self.parent.chapterID, range.length > 0 ? range : nil)
             }
         }
+
+        private func showSelectionPopover(textView: NSTextView, range: NSRange) {
+            let content = SelectionActionBar(
+                onComment: { [weak self] in
+                    self?.popover?.close()
+                    self?.parent.onCommentRequested(self?.parent.chapterID ?? UUID(), range)
+                },
+                onLike: { [weak self] in
+                    self?.popover?.close()
+                    self?.parent.onDirectAnnotate(self?.parent.chapterID ?? UUID(), range, .strong)
+                }
+            )
+            let p = NSPopover()
+            p.contentViewController = NSHostingController(rootView: content)
+            p.behavior = .transient
+            p.contentSize = NSSize(width: 190, height: 34)
+            self.popover?.close()
+            self.popover = p
+            guard let lm = textView.layoutManager, let tc = textView.textContainer else { return }
+            let glyphRange = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var selRect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+            selRect.origin.x += textView.textContainerInset.width
+            selRect.origin.y += textView.textContainerInset.height
+            p.show(relativeTo: selRect, of: textView, preferredEdge: .maxY)
+        }
+    }
+}
+
+// MARK: - Selection action bar
+
+private struct SelectionActionBar: View {
+    let onComment: () -> Void
+    let onLike:    () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onComment) {
+                HStack(spacing: 5) {
+                    Image(systemName: "text.bubble").font(.system(size: 11))
+                    Text("Comment").font(.system(size: 12, weight: .medium))
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+
+            Divider().frame(height: 18)
+
+            Button(action: onLike) {
+                HStack(spacing: 5) {
+                    Image(systemName: "hand.thumbsup").font(.system(size: 11))
+                    Text("Like").font(.system(size: 12, weight: .medium))
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+        }
+        .fixedSize()
     }
 }
 
@@ -641,7 +732,7 @@ private struct AnnotationsSidebar: View {
                     Image(systemName: "pencil.and.ruler")
                         .font(.system(size: 28))
                         .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
-                    Text("Select text, then tap\n\"Add Note\" to annotate")
+                    Text("Select text to see\nannotation options")
                         .font(.system(size: 11))
                         .foregroundStyle(AppTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -688,10 +779,10 @@ private struct AnnotationRow: View {
             Rectangle().fill(annotation.tag.color).frame(width: 3)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
-                    Image(systemName: annotation.tag.icon)
+                    Image(systemName: annotation.tag.labelIcon)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(annotation.tag.color)
-                    Text(annotation.tag.rawValue.uppercased())
+                    Text(annotation.tag.label.uppercased())
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(annotation.tag.color)
                         .tracking(0.5)
@@ -735,10 +826,9 @@ private struct AddNoteSheet: View {
     @Environment(\.dismiss) private var dismiss
     let range: NSRange?
     let text:  String
-    let onAdd: (String, AnnotationTag) -> Void
+    let onAdd: (String) -> Void
 
     @State private var note = ""
-    @State private var tag: AnnotationTag = .note
 
     private var snippet: String {
         guard let range, let str = (text as NSString?) else { return "" }
@@ -750,7 +840,7 @@ private struct AddNoteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Add Note")
+            Text("Add Comment")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary)
 
@@ -763,23 +853,7 @@ private struct AddNoteSheet: View {
                     .background(AppTheme.border.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            HStack(spacing: 6) {
-                ForEach(AnnotationTag.allCases, id: \.self) { t in
-                    Button { tag = t } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: t.icon).font(.system(size: 9, weight: .medium))
-                            Text(t.rawValue).font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(tag == t ? .white : AppTheme.textSecondary)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(tag == t ? t.color : AppTheme.border.opacity(0.4),
-                                    in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            TextField("Your note (optional)…", text: $note, axis: .vertical)
+            TextField("Your comment (optional)…", text: $note, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
                 .font(.system(size: 12))
@@ -789,10 +863,10 @@ private struct AddNoteSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .foregroundStyle(AppTheme.textSecondary)
-                Button("Add Note") { onAdd(note, tag); dismiss() }
+                Button("Add") { onAdd(note); dismiss() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .tint(tag.color)
+                    .tint(AnnotationTag.note.color)
             }
         }
         .padding(20)
@@ -835,7 +909,7 @@ private struct AllChaptersNotesSidebar: View {
                     Image(systemName: "pencil.and.ruler")
                         .font(.system(size: 28))
                         .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
-                    Text("Select text, then tap\n\"Add Note\" to annotate")
+                    Text("Select text to see\nannotation options")
                         .font(.system(size: 11))
                         .foregroundStyle(AppTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -1080,7 +1154,7 @@ private struct ArchivedNoteRow: View {
                 Rectangle().fill(archive.tag.color.opacity(0.7)).frame(width: 3, height: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(archive.tag.rawValue)
+                        Text(archive.tag.label)
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(archive.tag.color)
                         Text("·")

@@ -44,6 +44,14 @@ struct SidebarView: View {
                         .foregroundStyle(AppTheme.textSecondary.opacity(0.7))
                         .lineLimit(1)
                 }
+                let totalWords = book.chapters.reduce(0) {
+                    $0 + $1.rawText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+                }
+                Text(totalWords >= 1000
+                     ? String(format: "%.1fk words", Double(totalWords) / 1000.0)
+                     : "\(totalWords) words")
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
             }
             .padding(.horizontal, 14)
             .padding(.top, 16)
@@ -102,7 +110,11 @@ struct SidebarView: View {
                                 renameText: isRen
                                     ? Binding(get: { renameText }, set: { renameText = $0 })
                                     : .constant(chapter.title),
-                                chapterStatus: chapter.status
+                                chapterStatus: chapter.status,
+                                isChapter: true,
+                                wordCount: chapter.rawText
+                                    .components(separatedBy: .whitespacesAndNewlines)
+                                    .filter { !$0.isEmpty }.count
                             ) {
                                 if renamingID == nil {
                                     book.selectedChapterID = chapter.id
@@ -365,6 +377,8 @@ private struct SidebarItem: View {
     let isRenaming: Bool
     @Binding var renameText: String
     var chapterStatus: ChapterStatus? = nil
+    var isChapter: Bool = false
+    var wordCount: Int? = nil
     let onTap: () -> Void
     let onCommitRename: () -> Void
     @FocusState private var focused: Bool
@@ -391,11 +405,21 @@ private struct SidebarItem: View {
                         .onSubmit(onCommitRename)
                 } else {
                     Text(label)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? AppTheme.textPrimary : AppTheme.textSecondary)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : (isChapter ? .medium : .regular)))
+                        .foregroundStyle(
+                            isChapter
+                                ? (isSelected ? AppTheme.accentWrite : AppTheme.textPrimary)
+                                : (isSelected ? AppTheme.textPrimary : AppTheme.textSecondary)
+                        )
                         .lineLimit(1)
                 }
                 Spacer()
+
+                if let wc = wordCount {
+                    Text(wc >= 1000 ? String(format: "%.1fk", Double(wc) / 1000.0) : "\(wc)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(isSelected ? 0.75 : 0.40))
+                }
 
                 if let status = chapterStatus {
                     Image(systemName: status.icon)
@@ -406,12 +430,26 @@ private struct SidebarItem: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(
-                isSelected
-                    ? AppTheme.sidebarSelected
-                    : (isHovered ? AppTheme.sidebarHover : Color.clear),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
+            .background {
+                if isSelected && isChapter {
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.accentWrite.opacity(0.18))
+                        Rectangle()
+                            .fill(AppTheme.accentWrite)
+                            .frame(width: 3)
+                            .clipShape(UnevenRoundedRectangle(
+                                topLeadingRadius: 8,
+                                bottomLeadingRadius: 8,
+                                bottomTrailingRadius: 0,
+                                topTrailingRadius: 0
+                            ))
+                    }
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? AppTheme.sidebarSelected : (isHovered ? AppTheme.sidebarHover : Color.clear))
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
