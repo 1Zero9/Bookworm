@@ -8,6 +8,7 @@ private struct WorldBiblePackage: Codable {
     var characters: [WorldCharacterFile]
     var relationships: [RelationshipFile]?
     var worldMapPositions: [MapPositionEntry]?
+    var images: [ImageManifestEntry]?
     var schema: SchemaHints?
 
     struct SchemaHints: Codable {
@@ -147,7 +148,7 @@ struct WorldBibleView: View {
             PanelHeader(
                 step: "W",
                 label: "WORLD BIBLE",
-                subtitle: "genre, rules, and characters",
+                subtitle: "genre, rules, people & places",
                 accent: AppTheme.accentWorld
             ) {
                 HStack(spacing: 4) {
@@ -230,6 +231,7 @@ struct WorldBibleView: View {
             characters: chars.map { $0.toFile() },
             relationships: rels,
             worldMapPositions: positions,
+            images: book.imageManifest.isEmpty ? nil : book.imageManifest,
             schema: hints
         )
         guard let data = try? encoder.encode(package) else { return }
@@ -263,6 +265,10 @@ struct WorldBibleView: View {
                     for p in positions {
                         book.worldMapPositions[p.characterID] = CGPoint(x: p.x, y: p.y)
                     }
+                }
+                if let manifest = pkg.images {
+                    book.imageManifest = manifest
+                    ImageManager.shared.loadManifest(manifest)
                 }
                 return
             }
@@ -308,6 +314,7 @@ struct WorldBibleView: View {
                 if !c.psychologicalProfile.isEmpty { existing.psychologicalProfile = c.psychologicalProfile }
                 if !c.personalVoice.isEmpty        { existing.personalVoice        = c.personalVoice }
                 if !c.notes.isEmpty                { existing.notes                = c.notes }
+                if let ref = c.imageRef, !ref.isEmpty { existing.imageRef = ref }
             } else {
                 c.order = book.worldCharacters.count
                 book.worldCharacters.append(c)
@@ -411,54 +418,71 @@ private struct LedgerField: View {
 private struct CharacterVaultView: View {
     @Bindable var book: Book
     @State private var selectedID: UUID? = nil
-    @State private var listWidth: CGFloat = 200
+    @State private var listWidth: CGFloat = 210
+    @State private var activeKind: WorldEntityKind = .character
+
+    private var filteredEntities: [WorldCharacter] {
+        book.worldCharacters.filter { $0.kind == activeKind }
+    }
 
     private var selectedChar: WorldCharacter? {
         guard let id = selectedID else { return nil }
-        return book.worldCharacters.first { $0.id == id }
+        return filteredEntities.first { $0.id == id }
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            characterList
+            entityList
             PanelDivider {
-                listWidth = min(340, max(140, listWidth + $0))
+                listWidth = min(340, max(160, listWidth + $0))
             } onEnd: {}
-            characterDetail
+            entityDetail
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: List
 
-    private var characterList: some View {
+    private var entityList: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("CHARACTERS")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .tracking(1.0)
+            HStack(spacing: 4) {
+                ForEach(WorldEntityKind.allCases, id: \.self) { k in
+                    Button {
+                        activeKind = k
+                        selectedID = nil
+                    } label: {
+                        Text(k == .character ? "Characters" : "Places & Things")
+                            .font(.system(size: 11, weight: activeKind == k ? .semibold : .regular))
+                            .foregroundStyle(activeKind == k ? AppTheme.accentWorld : AppTheme.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(
+                                activeKind == k ? AppTheme.accentWorld.opacity(0.12) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
                 Spacer()
-                Button { addCharacter() } label: {
+                Button { addEntry() } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.accentWorld)
                         .padding(5)
                 }
                 .buttonStyle(.plain)
-                .help("Add character")
+                .help(activeKind == .character ? "Add character" : "Add place or thing")
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, 10)
+            .frame(height: 38)
             .background(AppTheme.background)
 
             Divider().background(AppTheme.border)
 
             ScrollView {
                 VStack(spacing: 2) {
-                    ForEach(book.worldCharacters) { char in
-                        CharacterRow(character: char, isSelected: selectedID == char.id) {
-                            selectedID = char.id
+                    ForEach(filteredEntities) { entity in
+                        CharacterRow(character: entity, isSelected: selectedID == entity.id) {
+                            selectedID = entity.id
                         }
                     }
                 }
@@ -466,7 +490,7 @@ private struct CharacterVaultView: View {
             }
             .background(AppTheme.sidebar)
 
-            if !book.worldCharacters.isEmpty {
+            if !filteredEntities.isEmpty {
                 Divider().background(AppTheme.border)
                 Button { deleteSelected() } label: {
                     Image(systemName: "trash")
@@ -477,7 +501,7 @@ private struct CharacterVaultView: View {
                 .buttonStyle(.plain)
                 .disabled(selectedID == nil)
                 .opacity(selectedID == nil ? 0.3 : 1)
-                .help("Delete selected character")
+                .help("Delete selected entry")
                 .frame(maxWidth: .infinity)
                 .background(AppTheme.background)
             }
@@ -488,15 +512,17 @@ private struct CharacterVaultView: View {
     // MARK: Detail
 
     @ViewBuilder
-    private var characterDetail: some View {
+    private var entityDetail: some View {
         if let char = selectedChar {
             CharacterDetailView(character: char)
         } else {
             VStack(spacing: 10) {
-                Image(systemName: "person.crop.circle.badge.plus")
+                Image(systemName: activeKind == .character ? "person.crop.circle.badge.plus" : "mappin.circle")
                     .font(.system(size: 36))
                     .foregroundStyle(AppTheme.accentWorld.opacity(0.3))
-                Text(book.worldCharacters.isEmpty ? "Add a character to begin" : "Select a character")
+                Text(filteredEntities.isEmpty
+                     ? (activeKind == .character ? "Add a character to begin" : "Add a place or thing to begin")
+                     : (activeKind == .character ? "Select a character" : "Select an entry"))
                     .font(.system(size: 13))
                     .foregroundStyle(AppTheme.textSecondary)
             }
@@ -505,15 +531,15 @@ private struct CharacterVaultView: View {
         }
     }
 
-    private func addCharacter() {
-        book.addWorldCharacter()
+    private func addEntry() {
+        if activeKind == .character { book.addWorldCharacter() } else { book.addWorldThing() }
         selectedID = book.worldCharacters.last?.id
     }
 
     private func deleteSelected() {
         guard let id = selectedID else { return }
         book.worldCharacters.removeAll { $0.id == id }
-        selectedID = book.worldCharacters.last?.id
+        selectedID = filteredEntities.last?.id
     }
 }
 
@@ -526,10 +552,7 @@ private struct CharacterRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                Image(systemName: "person.circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(isSelected ? AppTheme.accentWorld : AppTheme.textSecondary)
-                    .frame(width: 20)
+                thumbnail
                 Text(character.name.isEmpty ? "Unnamed" : character.name)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? AppTheme.textPrimary : AppTheme.textSecondary)
@@ -546,6 +569,24 @@ private struct CharacterRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
     }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if character.hasImage {
+            Image(nsImage: character.resolvedImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 24, height: 24)
+                .clipShape(character.kind == .character
+                           ? AnyShape(Circle())
+                           : AnyShape(RoundedRectangle(cornerRadius: 5)))
+        } else {
+            Image(systemName: character.kind.listIcon)
+                .font(.system(size: 15))
+                .foregroundStyle(isSelected ? AppTheme.accentWorld : AppTheme.textSecondary)
+                .frame(width: 24, height: 24)
+        }
+    }
 }
 
 private struct CharacterDetailView: View {
@@ -554,12 +595,17 @@ private struct CharacterDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Portrait / image
+                portraitSection
+
+                // Name
                 VStack(alignment: .leading, spacing: 6) {
                     Text("NAME")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.accentWorld)
                         .tracking(0.8)
-                    TextField("Character name…", text: $character.name)
+                    TextField(character.kind == .character ? "Character name…" : "Name…",
+                              text: $character.name)
                         .textFieldStyle(.plain)
                         .font(AppTheme.editorialFont(18, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary)
@@ -567,23 +613,123 @@ private struct CharacterDetailView: View {
 
                 Divider().background(AppTheme.border)
 
-                CharDetailField(label: "Physical Description",
-                                placeholder: "Height, build, hair, eyes, distinguishing features…",
-                                text: $character.physicalDescription)
-                CharDetailField(label: "Psychology",
-                                placeholder: "Core traits, fears, desires, internal conflicts…",
-                                text: $character.psychologicalProfile)
-                CharDetailField(label: "Voice & Speech",
-                                placeholder: "How they talk, verbal tics, vocabulary, accent…",
-                                text: $character.personalVoice)
-                CharDetailField(label: "Notes",
-                                placeholder: "Backstory, relationships, arc, secrets…",
-                                text: $character.notes)
+                if character.kind == .character {
+                    CharDetailField(label: "Physical Description",
+                                    placeholder: "Height, build, hair, eyes, distinguishing features…",
+                                    text: $character.physicalDescription)
+                    CharDetailField(label: "Psychology",
+                                    placeholder: "Core traits, fears, desires, internal conflicts…",
+                                    text: $character.psychologicalProfile)
+                    CharDetailField(label: "Voice & Speech",
+                                    placeholder: "How they talk, verbal tics, vocabulary, accent…",
+                                    text: $character.personalVoice)
+                    CharDetailField(label: "Notes",
+                                    placeholder: "Backstory, relationships, arc, secrets…",
+                                    text: $character.notes)
+                } else {
+                    CharDetailField(label: "Description",
+                                    placeholder: "Appearance, atmosphere, key sensory details…",
+                                    text: $character.physicalDescription)
+                    CharDetailField(label: "Notes",
+                                    placeholder: "History, significance, connections to the story…",
+                                    text: $character.notes)
+                }
             }
             .padding(24)
         }
         .background(AppTheme.surface)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Portrait section
+
+    @ViewBuilder
+    private var portraitSection: some View {
+        let isCircle = character.kind == .character
+        let size: CGFloat = 80
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isCircle ? "PORTRAIT" : "IMAGE")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+            HStack(spacing: 14) {
+                Button { pickPortrait() } label: {
+                    ZStack(alignment: .bottomTrailing) {
+                        if character.hasImage {
+                            Image(nsImage: character.resolvedImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: size, height: size)
+                                .clipShape(isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 12)))
+                                .overlay {
+                                    if isCircle { Circle().stroke(AppTheme.border, lineWidth: 1) }
+                                    else { RoundedRectangle(cornerRadius: 12).stroke(AppTheme.border, lineWidth: 1) }
+                                }
+                        } else {
+                            Group {
+                                if isCircle { Circle().fill(AppTheme.border.opacity(0.20)) }
+                                else { RoundedRectangle(cornerRadius: 12).fill(AppTheme.border.opacity(0.20)) }
+                            }
+                            .frame(width: size, height: size)
+                            .overlay {
+                                VStack(spacing: 5) {
+                                    Image(systemName: isCircle ? "person.crop.circle.badge.plus" : "photo.badge.plus")
+                                        .font(.system(size: 22))
+                                    Text("Add image")
+                                        .font(.system(size: 10))
+                                }
+                                .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
+                            }
+                        }
+                        if character.hasImage {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(AppTheme.accentWorld)
+                                .background(.white, in: Circle())
+                                .offset(x: 4, y: 4)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Click to choose an image")
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Click the image to change")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.textSecondary)
+                    if character.portraitData != nil {
+                        Button("Remove image") { character.portraitData = nil }
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                            .buttonStyle(.plain)
+                    }
+                    if let ref = character.imageRef, !ref.isEmpty {
+                        Text("Ref: \(ref)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func pickPortrait() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Image"
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff, .gif]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url,
+              let src = NSImage(contentsOf: url) else { return }
+        let maxSide: CGFloat = 400
+        let s = src.size
+        let scale = (s.width > maxSide || s.height > maxSide)
+            ? min(maxSide / s.width, maxSide / s.height) : 1.0
+        let dest = NSSize(width: round(s.width * scale), height: round(s.height * scale))
+        let resized = NSImage(size: dest, flipped: false) { _ in
+            src.draw(in: NSRect(origin: .zero, size: dest)); return true
+        }
+        character.portraitData = resized.pngData()
     }
 }
 
@@ -618,6 +764,10 @@ private struct RelationshipMapView: View {
     @State private var pendingEdge:  PendingEdge? = nil
     @State private var chapterFilter = 0   // 0 = all
     @State private var relPanelWidth: CGFloat = 210
+
+    private var arcChars: [WorldCharacter] {
+        book.worldCharacters.filter { $0.kind == .character }
+    }
 
     private struct PendingEdge: Identifiable {
         let id = UUID()
@@ -732,12 +882,12 @@ private struct RelationshipMapView: View {
             ZStack {
                 AppTheme.background.ignoresSafeArea()
 
-                if book.worldCharacters.isEmpty {
+                if arcChars.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "person.2.slash")
                             .font(.system(size: 36))
                             .foregroundStyle(AppTheme.textSecondary.opacity(0.25))
-                        Text("Add characters in the Characters tab to begin the arc map")
+                        Text("Add characters in the Characters section to begin the arc map")
                             .font(.system(size: 13))
                             .foregroundStyle(AppTheme.textSecondary.opacity(0.45))
                             .multilineTextAlignment(.center)
@@ -751,7 +901,7 @@ private struct RelationshipMapView: View {
                     .allowsHitTesting(false)
 
                     // Character nodes
-                    ForEach(book.worldCharacters) { char in
+                    ForEach(arcChars) { char in
                         ArcNode(
                             char: char,
                             isHighlighted: firstNodeID == char.id,
@@ -882,7 +1032,7 @@ private struct RelationshipMapView: View {
     // MARK: Helpers
 
     private func effectivePositions(in size: CGSize) -> [UUID: CGPoint] {
-        let chars = book.worldCharacters
+        let chars = arcChars
         let count = max(1, chars.count)
         var result: [UUID: CGPoint] = [:]
         for (idx, char) in chars.enumerated() {
@@ -940,9 +1090,17 @@ private struct ArcNode: View {
                     .stroke(isHighlighted ? AppTheme.accentWorld : AppTheme.border,
                             lineWidth: isHighlighted ? 2.5 : 1.5)
                     .frame(width: 52, height: 52)
-                Text(initials(char.name))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isHighlighted ? .white : AppTheme.textPrimary)
+                if char.hasImage {
+                    Image(nsImage: char.resolvedImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 48, height: 48)
+                        .clipShape(Circle())
+                } else {
+                    Text(initials(char.name))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(isHighlighted ? .white : AppTheme.textPrimary)
+                }
             }
             .scaleEffect(connectMode ? 1.06 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: connectMode)

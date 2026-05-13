@@ -19,6 +19,8 @@ struct BookFile: Codable {
     var worldMapPositions: [MapPositionEntry]?
     // v4: Annotation archives
     var annotationArchives: [AnnotationArchive]?
+    // v5: Image manifest for external media references
+    var imageManifest: [ImageManifestEntry]?
 }
 
 struct RelationshipFile: Codable {
@@ -55,6 +57,9 @@ struct WorldCharacterFile: Codable {
     var personalVoice:        String
     var notes:                String
     var order:                Int
+    var kind:                 String?  // nil in files saved before v2.1 → defaults to "Character"
+    var portraitData:         Data?
+    var imageRef:             String?
 }
 
 struct ChapterFile: Codable {
@@ -96,7 +101,8 @@ extension Book {
                 )
             },
             worldMapPositions: worldMapPositions.map { MapPositionEntry(characterID: $0.key, x: $0.value.x, y: $0.value.y) },
-            annotationArchives: annotationArchives.isEmpty ? nil : annotationArchives
+            annotationArchives: annotationArchives.isEmpty ? nil : annotationArchives,
+            imageManifest: imageManifest.isEmpty ? nil : imageManifest
         )
     }
 
@@ -117,6 +123,8 @@ extension Book {
             uniqueKeysWithValues: (file.worldMapPositions ?? []).map { ($0.characterID, CGPoint(x: $0.x, y: $0.y)) }
         )
         annotationArchives = file.annotationArchives ?? []
+        imageManifest = file.imageManifest ?? []
+        ImageManager.shared.loadManifest(imageManifest)
     }
 }
 
@@ -135,14 +143,20 @@ extension WorldCharacter {
     func toFile() -> WorldCharacterFile {
         WorldCharacterFile(id: id, name: name, physicalDescription: physicalDescription,
                            psychologicalProfile: psychologicalProfile, personalVoice: personalVoice,
-                           notes: notes, order: order)
+                           notes: notes, order: order,
+                           kind: kind.rawValue,
+                           portraitData: portraitData,
+                           imageRef: imageRef)
     }
     convenience init(from f: WorldCharacterFile) {
-        self.init(id: f.id, name: f.name, order: f.order)
+        let k = WorldEntityKind(rawValue: f.kind ?? "Character") ?? .character
+        self.init(id: f.id, name: f.name, order: f.order, kind: k)
         physicalDescription  = f.physicalDescription
         psychologicalProfile = f.psychologicalProfile
         personalVoice        = f.personalVoice
         notes                = f.notes
+        portraitData         = f.portraitData
+        imageRef             = f.imageRef
     }
 }
 

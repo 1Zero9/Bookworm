@@ -12,6 +12,18 @@ final class CoreLedger {
     var styleNotes:         String = ""
 }
 
+enum WorldEntityKind: String, Codable, CaseIterable {
+    case character = "Character"
+    case thing     = "Thing"
+
+    var listIcon: String {
+        switch self {
+        case .character: return "person.circle"
+        case .thing:     return "mappin.circle"
+        }
+    }
+}
+
 @Observable
 final class WorldCharacter: Identifiable {
     let id: UUID
@@ -20,10 +32,13 @@ final class WorldCharacter: Identifiable {
     var psychologicalProfile: String = ""
     var personalVoice:        String = ""
     var notes:                String = ""
-    var order: Int
+    var order:                Int
+    var kind:                 WorldEntityKind = .character
+    var portraitData:         Data? = nil
+    var imageRef:             String? = nil
 
-    init(id: UUID = UUID(), name: String, order: Int) {
-        self.id = id; self.name = name; self.order = order
+    init(id: UUID = UUID(), name: String, order: Int, kind: WorldEntityKind = .character) {
+        self.id = id; self.name = name; self.order = order; self.kind = kind
     }
 }
 

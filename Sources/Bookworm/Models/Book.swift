@@ -18,6 +18,7 @@ final class Book {
     var relationships: [CharacterRelationship] = []
     var worldMapPositions: [UUID: CGPoint] = [:]
     var annotationArchives: [AnnotationArchive] = []
+    var imageManifest: [ImageManifestEntry] = []
     var lastSavedAt: Date? = nil
 
     @ObservationIgnored private var autoSaveTimer: Timer?
@@ -26,6 +27,7 @@ final class Book {
         let first = Chapter(title: "Prologue", order: 0)
         self.chapters = [first]
         self.selectedChapterID = first.id
+        ImageManager.shared.ensureMediaDirectoryExists()
         autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
             guard let self, NSApp.isActive, self.fileURL != nil else { return }
             self.save()
@@ -37,8 +39,13 @@ final class Book {
     }
 
     func addWorldCharacter() {
-        let ch = WorldCharacter(name: "New Character", order: worldCharacters.count)
+        let ch = WorldCharacter(name: "New Character", order: worldCharacters.count, kind: .character)
         worldCharacters.append(ch)
+    }
+
+    func addWorldThing() {
+        let t = WorldCharacter(name: "New Entry", order: worldCharacters.count, kind: .thing)
+        worldCharacters.append(t)
     }
 
     var selectedChapter: Chapter? {

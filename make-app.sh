@@ -3,7 +3,7 @@ set -e
 
 APP_NAME="Bookworm"
 BUNDLE_ID="com.bookworm.app"
-VERSION="2.0"
+VERSION="2.1"
 APP_BUNDLE="${APP_NAME}.app"
 RESOURCES="${APP_BUNDLE}/Contents/Resources"
 ICON_PNG="Sources/Bookworm/Assets/icon.png"
