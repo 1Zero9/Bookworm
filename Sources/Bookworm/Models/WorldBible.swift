@@ -24,6 +24,16 @@ enum WorldEntityKind: String, Codable, CaseIterable {
     }
 }
 
+struct CharacterStat: Identifiable, Codable {
+    var id: UUID
+    var key: String
+    var value: String
+
+    init(id: UUID = UUID(), key: String = "", value: String = "") {
+        self.id = id; self.key = key; self.value = value
+    }
+}
+
 @Observable
 final class WorldCharacter: Identifiable {
     let id: UUID
@@ -36,6 +46,7 @@ final class WorldCharacter: Identifiable {
     var kind:                 WorldEntityKind = .character
     var portraitData:         Data? = nil
     var imageRef:             String? = nil
+    var stats:                [CharacterStat] = []
 
     init(id: UUID = UUID(), name: String, order: Int, kind: WorldEntityKind = .character) {
         self.id = id; self.name = name; self.order = order; self.kind = kind

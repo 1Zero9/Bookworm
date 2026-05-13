@@ -287,6 +287,7 @@ final class AutoTextView: NSTextView {
 
 struct ChapterImageStrip: View {
     @Bindable var chapter: Chapter
+    @State private var hoveredImageID: UUID?
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
@@ -304,6 +305,13 @@ struct ChapterImageStrip: View {
                             .frame(width: 88, height: 66)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                            .onHover { hoveredImageID = $0 ? img.id : nil }
+                            .popover(isPresented: .init(
+                                get: { hoveredImageID == img.id },
+                                set: { if !$0 { hoveredImageID = nil } }
+                            ), arrowEdge: .top) {
+                                ImagePreviewPopover(image: img.nsImage, id: img.id.uuidString)
+                            }
 
                         Button { chapter.images.removeAll { $0.id == img.id } } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -325,6 +333,33 @@ struct ChapterImageStrip: View {
             .padding(.vertical, 10)
         }
         .frame(height: 90)
+    }
+}
+
+// MARK: - Image preview popover (module-internal, used by WorldBibleView too)
+
+struct ImagePreviewPopover: View {
+    let image: NSImage
+    let id: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 300, maxHeight: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 4) {
+                Text("ID:")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(id)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(12)
     }
 }
 

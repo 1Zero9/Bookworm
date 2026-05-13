@@ -548,6 +548,7 @@ private struct CharacterRow: View {
     let isSelected: Bool
     let onTap: () -> Void
     @State private var isHovered = false
+    @State private var showThumbnailPreview = false
 
     var body: some View {
         Button(action: onTap) {
@@ -580,6 +581,10 @@ private struct CharacterRow: View {
                 .clipShape(character.kind == .character
                            ? AnyShape(Circle())
                            : AnyShape(RoundedRectangle(cornerRadius: 5)))
+                .onHover { showThumbnailPreview = $0 }
+                .popover(isPresented: $showThumbnailPreview, arrowEdge: .trailing) {
+                    ImagePreviewPopover(image: character.resolvedImage, id: character.id.uuidString)
+                }
         } else {
             Image(systemName: character.kind.listIcon)
                 .font(.system(size: 15))
@@ -591,54 +596,156 @@ private struct CharacterRow: View {
 
 private struct CharacterDetailView: View {
     @Bindable var character: WorldCharacter
+    @State private var portraitPanelWidth: CGFloat = 220
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Portrait / image
-                portraitSection
+        HStack(alignment: .top, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Portrait / image controls
+                    portraitSection
 
-                // Name
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("NAME")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(AppTheme.accentWorld)
-                        .tracking(0.8)
-                    TextField(character.kind == .character ? "Character name…" : "Name…",
-                              text: $character.name)
-                        .textFieldStyle(.plain)
-                        .font(AppTheme.editorialFont(18, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary)
+                    // Name
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("NAME")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(AppTheme.accentWorld)
+                            .tracking(0.8)
+                        TextField(character.kind == .character ? "Character name…" : "Name…",
+                                  text: $character.name)
+                            .textFieldStyle(.plain)
+                            .font(AppTheme.editorialFont(18, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                    }
+
+                    Divider().background(AppTheme.border)
+
+                    if character.kind == .character {
+                        CharDetailField(label: "Physical Description",
+                                        placeholder: "Height, build, hair, eyes, distinguishing features…",
+                                        text: $character.physicalDescription)
+                        CharDetailField(label: "Psychology",
+                                        placeholder: "Core traits, fears, desires, internal conflicts…",
+                                        text: $character.psychologicalProfile)
+                        CharDetailField(label: "Voice & Speech",
+                                        placeholder: "How they talk, verbal tics, vocabulary, accent…",
+                                        text: $character.personalVoice)
+                        CharDetailField(label: "Notes",
+                                        placeholder: "Backstory, relationships, arc, secrets…",
+                                        text: $character.notes)
+                    } else {
+                        CharDetailField(label: "Description",
+                                        placeholder: "Appearance, atmosphere, key sensory details…",
+                                        text: $character.physicalDescription)
+                        CharDetailField(label: "Notes",
+                                        placeholder: "History, significance, connections to the story…",
+                                        text: $character.notes)
+                    }
+
+                    // Stats
+                    statsSection
                 }
-
-                Divider().background(AppTheme.border)
-
-                if character.kind == .character {
-                    CharDetailField(label: "Physical Description",
-                                    placeholder: "Height, build, hair, eyes, distinguishing features…",
-                                    text: $character.physicalDescription)
-                    CharDetailField(label: "Psychology",
-                                    placeholder: "Core traits, fears, desires, internal conflicts…",
-                                    text: $character.psychologicalProfile)
-                    CharDetailField(label: "Voice & Speech",
-                                    placeholder: "How they talk, verbal tics, vocabulary, accent…",
-                                    text: $character.personalVoice)
-                    CharDetailField(label: "Notes",
-                                    placeholder: "Backstory, relationships, arc, secrets…",
-                                    text: $character.notes)
-                } else {
-                    CharDetailField(label: "Description",
-                                    placeholder: "Appearance, atmosphere, key sensory details…",
-                                    text: $character.physicalDescription)
-                    CharDetailField(label: "Notes",
-                                    placeholder: "History, significance, connections to the story…",
-                                    text: $character.notes)
-                }
+                .padding(24)
             }
-            .padding(24)
+
+            if character.hasImage {
+                PanelDivider {
+                    portraitPanelWidth = min(400, max(160, portraitPanelWidth - $0))
+                } onEnd: {}
+                portraitPreviewPanel
+            }
         }
         .background(AppTheme.surface)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var statsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("STATS")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+
+            if character.stats.isEmpty {
+                Text("No stats yet — add one below.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                    .italic()
+            } else {
+                ForEach($character.stats) { $stat in
+                    HStack(spacing: 8) {
+                        TextField("Label", text: $stat.key)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .frame(minWidth: 80, maxWidth: 120)
+                        Text(":")
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                        TextField("Value", text: $stat.value)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        Spacer()
+                        Button { character.stats.removeAll { $0.id == stat.id } } label: {
+                            Image(systemName: "minus.circle")
+                                .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.border.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
+
+            Button {
+                character.stats.append(CharacterStat())
+            } label: {
+                Label("Add stat", systemImage: "plus.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppTheme.accentWorld)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var portraitPreviewPanel: some View {
+        let isCircle = character.kind == .character
+        VStack(spacing: 16) {
+            Text(isCircle ? "PORTRAIT" : "IMAGE")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(nsImage: character.resolvedImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 16)))
+                .overlay {
+                    if isCircle { Circle().stroke(AppTheme.border, lineWidth: 1) }
+                    else { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1) }
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ID")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentWorld)
+                    .tracking(0.8)
+                Text(character.id.uuidString)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: portraitPanelWidth)
     }
 
     // MARK: Portrait section

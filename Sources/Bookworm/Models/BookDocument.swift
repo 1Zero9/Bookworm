@@ -60,6 +60,7 @@ struct WorldCharacterFile: Codable {
     var kind:                 String?  // nil in files saved before v2.1 → defaults to "Character"
     var portraitData:         Data?
     var imageRef:             String?
+    var stats:                [CharacterStat]? // nil in files saved before v2.2
 }
 
 struct ChapterFile: Codable {
@@ -146,7 +147,8 @@ extension WorldCharacter {
                            notes: notes, order: order,
                            kind: kind.rawValue,
                            portraitData: portraitData,
-                           imageRef: imageRef)
+                           imageRef: imageRef,
+                           stats: stats.isEmpty ? nil : stats)
     }
     convenience init(from f: WorldCharacterFile) {
         let k = WorldEntityKind(rawValue: f.kind ?? "Character") ?? .character
@@ -157,6 +159,7 @@ extension WorldCharacter {
         notes                = f.notes
         portraitData         = f.portraitData
         imageRef             = f.imageRef
+        stats                = f.stats ?? []
     }
 }
 
