@@ -137,7 +137,7 @@ enum AppTheme {
     }()
 
     // MARK: - Version
-    static let version = "v2.5.4"
+    static let version = "v2.6.0"
 }
 
 // MARK: - Nav pill (active = filled + shadow, inactive = ghost on hover)
