@@ -18,7 +18,7 @@ struct SidebarView: View {
                         Image(nsImage: icon)
                             .resizable()
                             .frame(width: 32, height: 32)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                            .mask(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                     Spacer()
                     HStack(spacing: 6) {
