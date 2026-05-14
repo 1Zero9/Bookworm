@@ -90,6 +90,10 @@ struct EditReviewView: View {
                 pending.chapter.annotations.sort { $0.start < $1.start }
             }
         }
+        .onChange(of: book.selectedChapterID) { _, id in
+            guard let id else { return }
+            scrollRequest = RedPenScrollRequest(chapterID: id)
+        }
         .alert("AI Audit Error", isPresented: $showAuditError) {
             Button("OK") {}
         } message: {

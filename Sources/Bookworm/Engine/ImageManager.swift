@@ -41,6 +41,22 @@ final class ImageManager {
     private var byFileName: [String: ImageManifestEntry] = [:]
     private var cache:      [String: NSImage]            = [:]
 
+    // User-selected media folder (persisted so it survives restarts).
+    var customMediaDirectory: URL? {
+        get {
+            UserDefaults.standard.string(forKey: "bw.customMediaDir")
+                .map { URL(fileURLWithPath: $0) }
+        }
+        set {
+            if let url = newValue {
+                UserDefaults.standard.set(url.path, forKey: "bw.customMediaDir")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "bw.customMediaDir")
+            }
+            cache.removeAll()
+        }
+    }
+
     // MARK: Manifest
 
     func loadManifest(_ entries: [ImageManifestEntry]) {
@@ -60,10 +76,13 @@ final class ImageManager {
                     ?? byFileName[ref]?.fileName  // ref is already a fileName in the manifest
                     ?? ref                        // ref IS the filename — used directly
 
-        let url = Self.mediaDirectory.appendingPathComponent(fileName)
-        if let img = NSImage(contentsOf: url) {
-            cache[ref] = img
-            return img
+        let searchRoots: [URL] = [Self.mediaDirectory, customMediaDirectory].compactMap { $0 }
+        for root in searchRoots {
+            let url = root.appendingPathComponent(fileName)
+            if let img = NSImage(contentsOf: url) {
+                cache[ref] = img
+                return img
+            }
         }
         return fallback(for: kind)
     }

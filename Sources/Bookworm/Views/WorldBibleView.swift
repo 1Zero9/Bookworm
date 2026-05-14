@@ -50,6 +50,28 @@ private struct FlexWorldBible: Decodable {
         }
     }
 
+    // Decodes stats whether stored as {"key": number} dict or [{id,key,value}] array
+    private enum FlexStats: Decodable {
+        case dict([String: Double])
+        case array([CharacterStat])
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let d = try? c.decode([String: Double].self) { self = .dict(d); return }
+            self = .array((try? c.decode([CharacterStat].self)) ?? [])
+        }
+
+        var asCharacterStats: [CharacterStat] {
+            switch self {
+            case .dict(let d):
+                return d.sorted { $0.key < $1.key }.map { k, v in
+                    CharacterStat(key: k, value: v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(v))
+                }
+            case .array(let a): return a
+            }
+        }
+    }
+
     struct FlexCharacter: Decodable {
         // Bookworm native keys — id decoded as String so invalid UUIDs don't throw
         let idString:             String?
@@ -58,6 +80,10 @@ private struct FlexWorldBible: Decodable {
         let psychologicalProfile: String?
         let personalVoice:        String?
         let notes:                String?
+        let biography:            String?
+        let sensoryAnchors:       String?
+        let imageRef:             String?
+        let stats:                FlexStats?
         // External / AI-generated keys
         let name:              String?
         let role:              String?
@@ -72,16 +98,20 @@ private struct FlexWorldBible: Decodable {
             case idString = "id"
             case order, name, role, traits, status, backstory, voice, description
             case physicalDescription, psychologicalProfile, personalVoice, notes
+            case biography, sensoryAnchors, imageRef, stats
             case sensory_anchors = "sensory_anchors"
         }
 
-        func toWorldCharacter(index: Int) -> WorldCharacter {
+        func toWorldCharacter(index: Int, kind: WorldEntityKind = .character) -> WorldCharacter {
             let uuid = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
-            let c = WorldCharacter(id: uuid, name: name ?? "Unnamed", order: order ?? index)
-            c.physicalDescription  = physicalDescription ?? sensory_anchors ?? description ?? ""
+            let c = WorldCharacter(id: uuid, name: name ?? "Unnamed", order: order ?? index, kind: kind)
+            c.biography            = biography ?? ""
+            c.physicalDescription  = physicalDescription ?? description ?? ""
             c.psychologicalProfile = psychologicalProfile ?? traits ?? ""
             c.personalVoice        = personalVoice ?? voice ?? ""
-            // Combine leftover fields that don't have a direct mapping into notes
+            c.sensoryAnchors       = sensoryAnchors ?? sensory_anchors ?? ""
+            c.imageRef             = imageRef
+            if let s = stats { c.stats = s.asCharacterStats }
             var extra: [String] = []
             if let r = role    { extra.append("Role: \(r)") }
             if let s = status  { extra.append("Status: \(s)") }
@@ -94,6 +124,8 @@ private struct FlexWorldBible: Decodable {
 
     let coreLedger: FlexLedger?
     let characters: [FlexCharacter]?
+    let things:     [FlexCharacter]?
+    let images:     [ImageManifestEntry]?
     let relationships: [FlexRelationship]?
 
     struct FlexRelationship: Decodable {
@@ -275,7 +307,30 @@ struct WorldBibleView: View {
             // Fall back to flexible decoder for external / AI-generated JSON.
             let flex = try JSONDecoder().decode(FlexWorldBible.self, from: data)
             if let lf = flex.coreLedger { mergeCoreLedgerFlex(lf) }
-            mergeCharacters((flex.characters ?? []).enumerated().map { i, fc in fc.toWorldCharacter(index: i) })
+
+            // Load image manifest and ask user to locate the media folder.
+            if let manifest = flex.images, !manifest.isEmpty {
+                book.imageManifest = manifest
+                ImageManager.shared.loadManifest(manifest)
+                let mediaPanel = NSOpenPanel()
+                mediaPanel.title = "Locate Media Folder"
+                mediaPanel.message = "This world bible references \(manifest.count) image\(manifest.count == 1 ? "" : "s"). Select the folder that contains them."
+                mediaPanel.canChooseFiles = false
+                mediaPanel.canChooseDirectories = true
+                mediaPanel.allowsMultipleSelection = false
+                if mediaPanel.runModal() == .OK, let folder = mediaPanel.url {
+                    ImageManager.shared.customMediaDirectory = folder
+                }
+            }
+
+            let charOffset = book.worldCharacters.count
+            mergeCharacters((flex.characters ?? []).enumerated().map { i, fc in
+                fc.toWorldCharacter(index: charOffset + i, kind: .character)
+            })
+            let thingOffset = book.worldCharacters.count
+            mergeCharacters((flex.things ?? []).enumerated().map { i, ft in
+                ft.toWorldCharacter(index: thingOffset + i, kind: .thing)
+            })
             if let flexRels = flex.relationships {
                 mergeRelationships(flexRels.compactMap { $0.resolve(against: book.worldCharacters) })
             }
@@ -304,16 +359,20 @@ struct WorldBibleView: View {
         if let v = lf.styleNotes,         !v.isEmpty { book.coreLedger.styleNotes         = v }
     }
 
-    // Upsert by name: update existing character's non-empty fields, or append if new.
+    // Upsert by name: update existing entity's non-empty fields, or append if new.
     private func mergeCharacters(_ incoming: [WorldCharacter]) {
         for c in incoming {
             if let existing = book.worldCharacters.first(where: {
                 $0.name.lowercased() == c.name.lowercased()
             }) {
+                if !c.biography.isEmpty            { existing.biography            = c.biography }
                 if !c.physicalDescription.isEmpty  { existing.physicalDescription  = c.physicalDescription }
                 if !c.psychologicalProfile.isEmpty { existing.psychologicalProfile = c.psychologicalProfile }
                 if !c.personalVoice.isEmpty        { existing.personalVoice        = c.personalVoice }
+                if !c.sensoryAnchors.isEmpty       { existing.sensoryAnchors       = c.sensoryAnchors }
                 if !c.notes.isEmpty                { existing.notes                = c.notes }
+                if !c.stats.isEmpty                { existing.stats                = c.stats }
+                if c.kind != .character            { existing.kind                 = c.kind }
                 if let ref = c.imageRef, !ref.isEmpty { existing.imageRef = ref }
             } else {
                 c.order = book.worldCharacters.count
