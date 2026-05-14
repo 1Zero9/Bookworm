@@ -51,7 +51,7 @@ private struct FlexWorldBible: Decodable {
     }
 
     // Decodes stats whether stored as {"key": number} dict or [{id,key,value}] array
-    private enum FlexStats: Decodable {
+    enum FlexStats: Decodable {
         case dict([String: Double])
         case array([CharacterStat])
 
