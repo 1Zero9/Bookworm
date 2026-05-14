@@ -100,6 +100,49 @@ final class ImageManager {
         try? FileManager.default.createDirectory(
             at: Self.mediaDirectory, withIntermediateDirectories: true)
     }
+
+    // MARK: - Auto-match
+
+    /// For every character/thing that has no imageRef and no embedded portraitData,
+    /// scans the custom media directory and assigns imageRef to the first file whose
+    /// name contains a meaningful word from the entity's name.
+    ///
+    /// Example: "Harlan Voss" → finds "voss_v1.png" → sets imageRef = "voss_v1.png"
+    @discardableResult
+    func autoMatch(characters: [WorldCharacter]) -> Int {
+        guard let mediaDir = customMediaDirectory else { return 0 }
+        let imageExts: Set<String> = ["png", "jpg", "jpeg", "heic", "gif", "tiff", "webp"]
+        guard let allFiles = try? FileManager.default.contentsOfDirectory(atPath: mediaDir.path) else { return 0 }
+        let imageFiles = allFiles.filter { imageExts.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+        guard !imageFiles.isEmpty else { return 0 }
+
+        var matched = 0
+        for character in characters {
+            guard character.imageRef == nil || character.imageRef!.isEmpty,
+                  character.portraitData == nil else { continue }
+
+            // Build search words: strip parenthesised suffixes, drop short/noise words
+            let cleaned = character.name
+                .replacingOccurrences(of: #"\s*\(.*?\)"#, with: "", options: .regularExpression)
+                .lowercased()
+            let words = cleaned
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 && $0 != "the" && $0 != "and" }
+
+            guard !words.isEmpty else { continue }
+
+            for file in imageFiles {
+                let fileLower = file.lowercased()
+                if words.contains(where: { fileLower.contains($0) }) {
+                    character.imageRef = file
+                    cache.removeValue(forKey: file)
+                    matched += 1
+                    break
+                }
+            }
+        }
+        return matched
+    }
 }
 
 // MARK: - WorldCharacter convenience

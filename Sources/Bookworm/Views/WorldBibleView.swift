@@ -200,7 +200,21 @@ struct WorldBibleView: View {
                         .background(AppTheme.accentWorld.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
-                    .help("Import world bible from a .worldbible JSON file")
+                    .help("Import world bible from a JSON file")
+
+                    Button { pickMediaFolder() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder").font(.system(size: 10, weight: .medium))
+                            Text("Media…").font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(ImageManager.shared.customMediaDirectory != nil
+                                         ? AppTheme.accentNarrate : AppTheme.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(AppTheme.border.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help(ImageManager.shared.customMediaDirectory.map { "Media folder: \($0.path)\nClick to change" }
+                          ?? "Set the folder containing character/thing images")
 
                     Button { exportWorldBible() } label: {
                         HStack(spacing: 4) {
@@ -320,6 +334,7 @@ struct WorldBibleView: View {
                 mediaPanel.allowsMultipleSelection = false
                 if mediaPanel.runModal() == .OK, let folder = mediaPanel.url {
                     ImageManager.shared.customMediaDirectory = folder
+                    ImageManager.shared.autoMatch(characters: book.worldCharacters)
                 }
             }
 
@@ -337,6 +352,21 @@ struct WorldBibleView: View {
         } catch {
             importError = error.localizedDescription
             showImportError = true
+        }
+    }
+
+    // MARK: - Media folder picker
+
+    private func pickMediaFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Media Folder"
+        panel.message = "Select the folder containing your character and thing images."
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let folder = panel.url {
+            ImageManager.shared.customMediaDirectory = folder
+            ImageManager.shared.autoMatch(characters: book.worldCharacters)
         }
     }
 
@@ -596,16 +626,12 @@ private struct CharacterVaultView: View {
                         activeKind = k
                         selectedID = nil
                     } label: {
-                        Text(k == .character ? "Characters" : "Places & Things")
-                            .font(.system(size: 11, weight: activeKind == k ? .semibold : .regular))
-                            .foregroundStyle(activeKind == k ? AppTheme.accentWorld : AppTheme.textSecondary)
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(
-                                activeKind == k ? AppTheme.accentWorld.opacity(0.12) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 6)
-                            )
+                        HStack(spacing: 4) {
+                            Image(systemName: k.listIcon).font(.system(size: 10, weight: .medium))
+                            Text(k == .character ? "People" : "Things")
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NavPillButtonStyle(isActive: activeKind == k, accent: AppTheme.accentWorld))
                 }
                 Spacer()
                 Button { addEntry() } label: {
@@ -666,8 +692,8 @@ private struct CharacterVaultView: View {
                     .font(.system(size: 36))
                     .foregroundStyle(AppTheme.accentWorld.opacity(0.3))
                 Text(filteredEntities.isEmpty
-                     ? (activeKind == .character ? "Add a character to begin" : "Add a place or thing to begin")
-                     : (activeKind == .character ? "Select a character" : "Select an entry"))
+                     ? (activeKind == .character ? "Add a character to begin" : "Add a thing to begin")
+                     : (activeKind == .character ? "Select a character" : "Select a thing"))
                     .font(.system(size: 13))
                     .foregroundStyle(AppTheme.textSecondary)
             }
@@ -714,6 +740,16 @@ private struct CharacterRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button {
+                character.kind = character.kind == .character ? .thing : .character
+            } label: {
+                Label(
+                    character.kind == .character ? "Move to Things" : "Move to People",
+                    systemImage: character.kind == .character ? "mappin.circle" : "person.circle"
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -745,6 +781,22 @@ private struct CharacterDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Kind selector
+                HStack(spacing: 4) {
+                    Text("TYPE").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary).tracking(0.8)
+                    Spacer()
+                    ForEach(WorldEntityKind.allCases, id: \.self) { k in
+                        Button { character.kind = k } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: k.listIcon).font(.system(size: 10, weight: .medium))
+                                Text(k == .character ? "Person" : "Thing")
+                            }
+                        }
+                        .buttonStyle(NavPillButtonStyle(isActive: character.kind == k, accent: AppTheme.accentWorld))
+                    }
+                }
+
                 // Portrait / image controls
                 portraitSection
 
@@ -783,11 +835,14 @@ private struct CharacterDetailView: View {
                                     placeholder: "Backstory, relationships, arc, secrets…",
                                     text: $character.notes)
                 } else {
+                    CharDetailField(label: "Biography",
+                                    placeholder: "Origin, history, what makes this significant…",
+                                    text: $character.biography)
                     CharDetailField(label: "Description",
                                     placeholder: "Appearance, atmosphere, key sensory details…",
                                     text: $character.physicalDescription)
                     CharDetailField(label: "Notes",
-                                    placeholder: "History, significance, connections to the story…",
+                                    placeholder: "Connections to the story, current status…",
                                     text: $character.notes)
                 }
 
