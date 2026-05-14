@@ -165,17 +165,13 @@ struct SidebarView: View {
             // New Chapter button
             Button { book.addChapter() } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "plus").font(.system(size: 13, weight: .semibold))
-                    Text("New Chapter").font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "plus").font(.system(size: 13, weight: .bold))
+                    Text("New Chapter")
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(AppTheme.accentWrite, in: RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PrimaryPillButtonStyle(color: AppTheme.accentWrite))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
             .help("Add a new chapter")
 
             HStack {
@@ -462,7 +458,6 @@ private struct SidebarItem: View {
 
 struct SaveButton: View {
     let book: Book
-    @State private var isHovered = false
 
     private var savedLabel: String {
         guard let date = book.lastSavedAt else { return "Save" }
@@ -479,19 +474,10 @@ struct SaveButton: View {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 11, weight: .medium))
                 Text(savedLabel)
-                    .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundStyle(isHovered ? AppTheme.accentWrite : AppTheme.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                isHovered ? AppTheme.accentWrite.opacity(0.12) : AppTheme.border.opacity(0.6),
-                in: RoundedRectangle(cornerRadius: 7)
-            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GhostToolButtonStyle())
         .help("Save (⌘S)")
-        .onHover { isHovered = $0 }
     }
 }
 
@@ -499,22 +485,14 @@ struct SaveButton: View {
 
 struct IconToolButton: View {
     let icon: String; let tip: String; let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13))
-                .foregroundStyle(isHovered ? AppTheme.textPrimary : AppTheme.textSecondary)
-                .padding(7)
-                .background(
-                    AppTheme.border.opacity(isHovered ? 1.2 : 0.6),
-                    in: RoundedRectangle(cornerRadius: 7)
-                )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GhostToolButtonStyle())
         .help(tip)
-        .onHover { isHovered = $0 }
     }
 }
 

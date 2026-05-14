@@ -345,17 +345,10 @@ private struct WorldBibleTab: View {
         Button { current = tab } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 10, weight: .medium))
-                Text(label).font(.system(size: 11, weight: .semibold))
+                Text(label)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .foregroundStyle(current == tab ? AppTheme.accentWorld : AppTheme.textSecondary)
-            .background(
-                current == tab ? AppTheme.accentWorld.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 7)
-            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NavPillButtonStyle(isActive: current == tab, accent: AppTheme.accentWorld))
     }
 }
 
@@ -419,7 +412,8 @@ private struct CharacterVaultView: View {
     @Bindable var book: Book
     @State private var selectedID: UUID? = nil
     @State private var listWidth: CGFloat = 210
-    @State private var portraitPanelWidth: CGFloat = 220
+    @State private var portraitPanelWidth: CGFloat = 320
+    @State private var portraitCollapsed = false
     @State private var activeKind: WorldEntityKind = .character
 
     private var filteredEntities: [WorldCharacter] {
@@ -440,31 +434,68 @@ private struct CharacterVaultView: View {
                 listWidth = min(340, max(160, listWidth + $0))
             } onEnd: {}
             entityDetail
-            // Always in the hierarchy so PanelDivider keeps its @State lastX mid-drag
+            // Divider hidden when panel is collapsed or no portrait
             PanelDivider {
-                portraitPanelWidth = min(400, max(160, portraitPanelWidth - $0))
+                portraitPanelWidth = min(600, max(160, portraitPanelWidth - $0))
             } onEnd: {}
-            .opacity(hasPortrait ? 1 : 0)
-            .allowsHitTesting(hasPortrait)
+            .opacity(hasPortrait && !portraitCollapsed ? 1 : 0)
+            .allowsHitTesting(hasPortrait && !portraitCollapsed)
+            // Panel always in hierarchy for stable PanelDivider identity
             ZStack {
                 if let char = selectedChar, char.hasImage {
-                    portraitPanelContent(for: char)
+                    if portraitCollapsed {
+                        collapsedStrip
+                    } else {
+                        portraitPanelContent(for: char)
+                    }
                 }
             }
-            .frame(width: hasPortrait ? portraitPanelWidth : 0)
+            .frame(width: hasPortrait ? (portraitCollapsed ? 32 : portraitPanelWidth) : 0)
             .clipped()
+            .animation(.easeInOut(duration: 0.22), value: portraitCollapsed)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var collapsedStrip: some View {
+        VStack(spacing: 0) {
+            Button { portraitCollapsed = false } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Expand portrait")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppTheme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(AppTheme.border).frame(width: 1)
+        }
     }
 
     @ViewBuilder
     private func portraitPanelContent(for char: WorldCharacter) -> some View {
         let isCircle = char.kind == .character
         VStack(alignment: .leading, spacing: 16) {
-            Text(isCircle ? "PORTRAIT" : "IMAGE")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppTheme.accentWorld)
-                .tracking(0.8)
+            // Header row with minimise button
+            HStack {
+                Text(isCircle ? "PORTRAIT" : "IMAGE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentWorld)
+                    .tracking(0.8)
+                Spacer()
+                Button { portraitCollapsed = true } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                }
+                .buttonStyle(GhostToolButtonStyle())
+                .help("Minimise portrait")
+            }
 
             Image(nsImage: char.resolvedImage)
                 .resizable()
@@ -474,6 +505,7 @@ private struct CharacterVaultView: View {
                     if isCircle { Circle().stroke(AppTheme.border, lineWidth: 1) }
                     else { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1) }
                 }
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("ID")
@@ -673,6 +705,9 @@ private struct CharacterDetailView: View {
                 Divider().background(AppTheme.border)
 
                 if character.kind == .character {
+                    CharDetailField(label: "Biography",
+                                    placeholder: "Narrative backstory — who they are, where they came from, what shaped them…",
+                                    text: $character.biography)
                     CharDetailField(label: "Physical Description",
                                     placeholder: "Height, build, hair, eyes, distinguishing features…",
                                     text: $character.physicalDescription)
@@ -682,6 +717,9 @@ private struct CharacterDetailView: View {
                     CharDetailField(label: "Voice & Speech",
                                     placeholder: "How they talk, verbal tics, vocabulary, accent…",
                                     text: $character.personalVoice)
+                    CharDetailField(label: "Sensory Anchors",
+                                    placeholder: "Smell, sound, touch, habit — the details that make them real on the page…",
+                                    text: $character.sensoryAnchors)
                     CharDetailField(label: "Notes",
                                     placeholder: "Backstory, relationships, arc, secrets…",
                                     text: $character.notes)

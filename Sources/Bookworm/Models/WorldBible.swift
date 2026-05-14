@@ -38,9 +38,11 @@ struct CharacterStat: Identifiable, Codable {
 final class WorldCharacter: Identifiable {
     let id: UUID
     var name:                 String
+    var biography:            String = ""
     var physicalDescription:  String = ""
     var psychologicalProfile: String = ""
     var personalVoice:        String = ""
+    var sensoryAnchors:       String = ""
     var notes:                String = ""
     var order:                Int
     var kind:                 WorldEntityKind = .character

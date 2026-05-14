@@ -140,6 +140,122 @@ enum AppTheme {
     static let version = "v2.3"
 }
 
+// MARK: - Nav pill (active = filled + shadow, inactive = ghost on hover)
+
+struct NavPillButtonStyle: ButtonStyle {
+    let isActive: Bool
+    let accent: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        NavPillBody(config: configuration, isActive: isActive, accent: accent)
+    }
+
+    private struct NavPillBody: View {
+        let config: ButtonStyleConfiguration
+        let isActive: Bool
+        let accent: Color
+        @State private var hovered = false
+
+        var body: some View {
+            config.label
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(labelColor)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(bgColor, in: Capsule())
+                .overlay(
+                    Capsule().stroke(
+                        isActive ? Color.clear : (hovered ? accent.opacity(0.55) : AppTheme.border),
+                        lineWidth: 1
+                    )
+                )
+                .shadow(
+                    color: isActive ? accent.opacity(hovered ? 0.55 : 0.32) : .clear,
+                    radius: isActive ? (hovered ? 12 : 7) : 0,
+                    y: isActive ? (hovered ? 5 : 2) : 0
+                )
+                .scaleEffect(config.isPressed ? 0.96 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: hovered)
+                .animation(.easeInOut(duration: 0.08), value: config.isPressed)
+                .onHover { hovered = $0 }
+        }
+
+        private var labelColor: Color {
+            if isActive { return .white }
+            return hovered ? accent : AppTheme.textSecondary
+        }
+
+        private var bgColor: Color {
+            if isActive { return accent }
+            return hovered ? accent.opacity(0.10) : Color.clear
+        }
+    }
+}
+
+// MARK: - Primary CTA pill (filled, prominent shadow, hover lift)
+
+struct PrimaryPillButtonStyle: ButtonStyle {
+    var color: Color = AppTheme.accentWrite
+    var fontSize: CGFloat = 13
+
+    func makeBody(configuration: Configuration) -> some View {
+        PrimaryPillBody(config: configuration, color: color, fontSize: fontSize)
+    }
+
+    private struct PrimaryPillBody: View {
+        let config: ButtonStyleConfiguration
+        let color: Color
+        let fontSize: CGFloat
+        @State private var hovered = false
+
+        var body: some View {
+            config.label
+                .font(.system(size: fontSize, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(color, in: Capsule())
+                .overlay(Capsule().fill(Color.white.opacity(hovered ? 0.10 : 0)))
+                .shadow(color: color.opacity(hovered ? 0.50 : 0.30),
+                        radius: hovered ? 14 : 7, y: hovered ? 5 : 3)
+                .scaleEffect(config.isPressed ? 0.97 : (hovered ? 1.01 : 1.0))
+                .animation(.easeInOut(duration: 0.15), value: hovered)
+                .animation(.easeInOut(duration: 0.08), value: config.isPressed)
+                .onHover { hovered = $0 }
+        }
+    }
+}
+
+// MARK: - Ghost toolbar button (icon or icon+text, rounds up on hover)
+
+struct GhostToolButtonStyle: ButtonStyle {
+    var tint: Color = AppTheme.textSecondary
+
+    func makeBody(configuration: Configuration) -> some View {
+        GhostToolBody(config: configuration, tint: tint)
+    }
+
+    private struct GhostToolBody: View {
+        let config: ButtonStyleConfiguration
+        let tint: Color
+        @State private var hovered = false
+
+        var body: some View {
+            config.label
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(hovered ? AppTheme.textPrimary : tint)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(hovered ? AppTheme.border.opacity(0.7) : .clear, in: Capsule())
+                .scaleEffect(config.isPressed ? 0.96 : 1.0)
+                .animation(.easeInOut(duration: 0.13), value: hovered)
+                .animation(.easeInOut(duration: 0.08), value: config.isPressed)
+                .onHover { hovered = $0 }
+        }
+    }
+}
+
 // MARK: - Color hex init
 
 extension Color {

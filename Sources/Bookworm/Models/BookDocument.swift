@@ -52,9 +52,11 @@ struct CoreLedgerFile: Codable {
 struct WorldCharacterFile: Codable {
     var id:                   UUID
     var name:                 String
+    var biography:            String?  // nil in files saved before v2.3
     var physicalDescription:  String
     var psychologicalProfile: String
     var personalVoice:        String
+    var sensoryAnchors:       String?  // nil in files saved before v2.3
     var notes:                String
     var order:                Int
     var kind:                 String?  // nil in files saved before v2.1 → defaults to "Character"
@@ -142,8 +144,12 @@ extension CoreLedger {
 
 extension WorldCharacter {
     func toFile() -> WorldCharacterFile {
-        WorldCharacterFile(id: id, name: name, physicalDescription: physicalDescription,
-                           psychologicalProfile: psychologicalProfile, personalVoice: personalVoice,
+        WorldCharacterFile(id: id, name: name,
+                           biography: biography.isEmpty ? nil : biography,
+                           physicalDescription: physicalDescription,
+                           psychologicalProfile: psychologicalProfile,
+                           personalVoice: personalVoice,
+                           sensoryAnchors: sensoryAnchors.isEmpty ? nil : sensoryAnchors,
                            notes: notes, order: order,
                            kind: kind.rawValue,
                            portraitData: portraitData,
@@ -153,9 +159,11 @@ extension WorldCharacter {
     convenience init(from f: WorldCharacterFile) {
         let k = WorldEntityKind(rawValue: f.kind ?? "Character") ?? .character
         self.init(id: f.id, name: f.name, order: f.order, kind: k)
+        biography            = f.biography ?? ""
         physicalDescription  = f.physicalDescription
         psychologicalProfile = f.psychologicalProfile
         personalVoice        = f.personalVoice
+        sensoryAnchors       = f.sensoryAnchors ?? ""
         notes                = f.notes
         portraitData         = f.portraitData
         imageRef             = f.imageRef

@@ -3,7 +3,7 @@ set -e
 
 APP_NAME="Bookworm"
 BUNDLE_ID="com.bookworm.app"
-VERSION="2.1"
+VERSION="2.3"
 APP_BUNDLE="${APP_NAME}.app"
 RESOURCES="${APP_BUNDLE}/Contents/Resources"
 ICON_PNG="Sources/Bookworm/Assets/icon.png"
@@ -50,7 +50,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key>     <string>${APP_NAME}</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>${VERSION}</string>
-    <key>CFBundleVersion</key>         <string>1</string>
+    <key>CFBundleVersion</key>         <string>3</string>
     <key>CFBundleIconFile</key>        <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>  <string>14.0</string>
     <key>NSHighResolutionCapable</key> <true/>

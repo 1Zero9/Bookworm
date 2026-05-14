@@ -92,11 +92,8 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "sidebar.right")
                                 .font(.system(size: 13))
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .padding(6)
-                                .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GhostToolButtonStyle())
                         .help("Hide panel")
                         .padding(.leading, 4)
                     }
@@ -159,17 +156,10 @@ private struct LayoutBar: View {
                         Image(systemName: preset.icon)
                             .font(.system(size: 10, weight: .medium))
                         Text(preset.rawValue)
-                            .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundStyle(layout.currentPreset == preset ? .white : AppTheme.textSecondary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(
-                        layout.currentPreset == preset ? preset.accent : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 6)
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NavPillButtonStyle(isActive: layout.currentPreset == preset,
+                                               accent: preset.accent))
                 .help(helpText(preset))
             }
             Spacer()
@@ -278,14 +268,9 @@ private struct PanelTab: View {
         Button { current = tab } label: {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 10, weight: .medium))
-                Text(label).font(.system(size: 11, weight: .semibold))
+                Text(label)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .foregroundStyle(isActive ? accent : AppTheme.textSecondary)
-            .background(isActive ? accent.opacity(0.12) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 7))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NavPillButtonStyle(isActive: isActive, accent: accent))
     }
 }
