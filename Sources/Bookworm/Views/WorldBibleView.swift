@@ -504,6 +504,7 @@ private struct CharacterVaultView: View {
     @State private var portraitPanelWidth: CGFloat = 320
     @State private var portraitCollapsed = false
     @State private var activeKind: WorldEntityKind = .character
+    @State private var lightboxImage: NSImage? = nil
 
     private var filteredEntities: [WorldCharacter] {
         book.worldCharacters.filter { $0.kind == activeKind }
@@ -544,6 +545,38 @@ private struct CharacterVaultView: View {
             .animation(.easeInOut(duration: 0.22), value: portraitCollapsed)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay {
+            if let img = lightboxImage {
+                ZStack {
+                    Color.black.opacity(0.75)
+                        .ignoresSafeArea()
+                        .onTapGesture { lightboxImage = nil }
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(40)
+                        .shadow(color: .black.opacity(0.5), radius: 40, y: 8)
+                        .onTapGesture { lightboxImage = nil }
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button { lightboxImage = nil } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .padding(20)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Close")
+                        }
+                        Spacer()
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: lightboxImage == nil)
     }
 
     private var collapsedStrip: some View {
@@ -595,6 +628,9 @@ private struct CharacterVaultView: View {
                     else { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1) }
                 }
                 .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .onTapGesture { lightboxImage = char.resolvedImage }
+                .help("Click to view full size")
+                .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("ID")
@@ -774,6 +810,207 @@ private struct CharacterRow: View {
         }
     }
 }
+
+// MARK: - Arc character detail (master-detail card)
+
+private struct ArcCharacterDetailView: View {
+    @Bindable var character: WorldCharacter
+    let relationships: [CharacterRelationship]
+    let allChars: [WorldCharacter]
+
+    private var myArcs: [CharacterRelationship] {
+        relationships.filter { $0.fromID == character.id || $0.toID == character.id }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // 1 — Header: square portrait + name
+                header
+                    .padding(24)
+
+                Divider().background(AppTheme.border)
+
+                // 2 — Stats bar
+                if !character.stats.isEmpty {
+                    statsBar
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 16)
+                    Divider().background(AppTheme.border)
+                }
+
+                VStack(alignment: .leading, spacing: 20) {
+                    // 3-8 — Content blocks
+                    if !character.biography.isEmpty {
+                        arcInfoBlock(label: "BIOGRAPHY", text: character.biography)
+                    }
+                    if !character.physicalDescription.isEmpty {
+                        arcInfoBlock(label: "PHYSICAL DESCRIPTION", text: character.physicalDescription)
+                    }
+                    if !character.psychologicalProfile.isEmpty {
+                        arcInfoBlock(label: "PSYCHOLOGY", text: character.psychologicalProfile)
+                    }
+                    if !character.personalVoice.isEmpty {
+                        arcInfoBlock(label: "VOICE & SPEECH", text: character.personalVoice)
+                    }
+                    if !character.sensoryAnchors.isEmpty {
+                        arcInfoBlock(label: "SENSORY ANCHORS", text: character.sensoryAnchors)
+                    }
+                    if !character.notes.isEmpty {
+                        arcInfoBlock(label: "NOTES", text: character.notes)
+                    }
+
+                    if character.biography.isEmpty && character.physicalDescription.isEmpty
+                        && character.psychologicalProfile.isEmpty && character.personalVoice.isEmpty
+                        && character.sensoryAnchors.isEmpty && character.notes.isEmpty {
+                        Text("No profile yet — add details in the Characters panel.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
+                            .italic()
+                    }
+
+                    // Arc relationships for this character
+                    if !myArcs.isEmpty {
+                        Divider().background(AppTheme.border)
+                        arcsList
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .background(AppTheme.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        HStack(alignment: .top, spacing: 18) {
+            // Square portrait
+            Group {
+                if character.hasImage {
+                    Image(nsImage: character.resolvedImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Rectangle()
+                        .fill(AppTheme.border.opacity(0.25))
+                        .overlay {
+                            Text(initials(character.name))
+                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
+                        }
+                }
+            }
+            .frame(width: 100, height: 100)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppTheme.border, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(character.name.isEmpty ? "Unnamed" : character.name)
+                    .font(AppTheme.editorialFont(22, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(character.kind == .character ? "Character" : "Thing")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentWorld)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(AppTheme.accentWorld.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                if !myArcs.isEmpty {
+                    Text("\(myArcs.count) arc\(myArcs.count == 1 ? "" : "s")")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
+                }
+            }
+            Spacer()
+        }
+    }
+
+    private var statsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(character.stats) { stat in
+                    VStack(spacing: 3) {
+                        Text(stat.key.uppercased())
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(AppTheme.accentWorld)
+                            .tracking(0.6)
+                            .lineLimit(1)
+                        Text(stat.value)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(AppTheme.border.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func arcInfoBlock(label: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var arcsList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ARCS")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+            ForEach(myArcs) { rel in
+                let other = allChars.first {
+                    $0.id == (rel.fromID == character.id ? rel.toID : rel.fromID)
+                }
+                HStack(spacing: 8) {
+                    Capsule().fill(rel.type.color).frame(width: 3, height: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(rel.fromID == character.id ? "→" : "←")
+                                .font(.system(size: 10))
+                                .foregroundStyle(rel.type.color)
+                            Text(other?.name ?? "Unknown")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AppTheme.textPrimary)
+                        }
+                        HStack(spacing: 4) {
+                            Text(rel.type.rawValue)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(rel.type.color)
+                            if !rel.label.isEmpty {
+                                Text("· \(rel.label)")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(AppTheme.textSecondary)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(AppTheme.border.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
+    }
+
+    private func initials(_ name: String) -> String {
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 { return String(parts[0].prefix(1) + parts[1].prefix(1)).uppercased() }
+        return String(name.prefix(2)).uppercased()
+    }
+}
+
+// MARK: - Character Vault detail
 
 private struct CharacterDetailView: View {
     @Bindable var character: WorldCharacter
@@ -1024,11 +1261,12 @@ private struct CharDetailField: View {
 
 private struct RelationshipMapView: View {
     @Environment(Book.self) private var book
-    @State private var connectMode   = false
+    @State private var connectMode        = false
     @State private var firstNodeID:  UUID? = nil
     @State private var pendingEdge:  PendingEdge? = nil
-    @State private var chapterFilter = 0   // 0 = all
-    @State private var relPanelWidth: CGFloat = 210
+    @State private var chapterFilter      = 0
+    @State private var selectedCharacterID: UUID? = nil
+    @State private var detailPanelWidth: CGFloat  = 470
 
     private var arcChars: [WorldCharacter] {
         book.worldCharacters.filter { $0.kind == .character }
@@ -1048,9 +1286,9 @@ private struct RelationshipMapView: View {
             HStack(spacing: 0) {
                 canvas
                 PanelDivider {
-                    relPanelWidth = min(400, max(160, relPanelWidth - $0))
+                    detailPanelWidth = min(620, max(320, detailPanelWidth - $0))
                 } onEnd: {}
-                relationshipsPanel
+                arcDetailPanel
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1170,6 +1408,8 @@ private struct RelationshipMapView: View {
                         ArcNode(
                             char: char,
                             isHighlighted: firstNodeID == char.id,
+                            isSelected: selectedCharacterID == char.id,
+                            isDimmed: selectedCharacterID != nil && selectedCharacterID != char.id,
                             connectMode: connectMode
                         )
                         .position(positions[char.id] ?? CGPoint(x: geo.size.width/2, y: geo.size.height/2))
@@ -1188,57 +1428,41 @@ private struct RelationshipMapView: View {
         }
     }
 
-    // MARK: Relationships panel
+    // MARK: Arc detail panel
 
-    private var relationshipsPanel: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("ARCS")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .tracking(1.0)
-                Spacer()
-                Text("\(book.relationships.count)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(AppTheme.background)
-
-            Divider().background(AppTheme.border)
-
-            if book.relationships.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 24))
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.2))
-                    Text("No arcs yet.\nUse Connect to link characters.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.4))
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppTheme.sidebar)
-            } else {
-                ScrollView {
-                    VStack(spacing: 1) {
-                        ForEach(book.relationships) { rel in
-                            RelationshipRow(
-                                rel: rel,
-                                fromName: book.worldCharacters.first { $0.id == rel.fromID }?.name ?? "?",
-                                toName:   book.worldCharacters.first { $0.id == rel.toID   }?.name ?? "?"
-                            ) {
-                                book.relationships.removeAll { $0.id == rel.id }
-                            }
-                        }
+    @ViewBuilder
+    private var arcDetailPanel: some View {
+        if let char = arcChars.first(where: { $0.id == selectedCharacterID }) {
+            ArcCharacterDetailView(character: char, relationships: book.relationships, allChars: book.worldCharacters)
+                .frame(width: detailPanelWidth)
+                .overlay(alignment: .leading) { Rectangle().fill(AppTheme.border).frame(width: 1) }
+        } else {
+            VStack(spacing: 14) {
+                Image(systemName: "person.crop.circle.dashed")
+                    .font(.system(size: 42))
+                    .foregroundStyle(AppTheme.accentWorld.opacity(0.22))
+                Text("Tap a character\nto view their profile")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                if !book.relationships.isEmpty {
+                    Divider().padding(.horizontal, 30)
+                    VStack(spacing: 2) {
+                        Text("ARCS")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                            .tracking(0.8)
+                        Text("\(book.relationships.count)")
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.accentWorld.opacity(0.6))
                     }
-                    .padding(6)
                 }
-                .background(AppTheme.sidebar)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: detailPanelWidth)
+            .background(AppTheme.surface)
+            .overlay(alignment: .leading) { Rectangle().fill(AppTheme.border).frame(width: 1) }
         }
-        .frame(width: relPanelWidth)
     }
 
     // MARK: Drawing
@@ -1253,20 +1477,38 @@ private struct RelationshipMapView: View {
             let fromEdge = CGPoint(x: from.x + dx/len * nodeR, y: from.y + dy/len * nodeR)
             let toEdge   = CGPoint(x: to.x   - dx/len * nodeR, y: to.y   - dy/len * nodeR)
 
-            // Quadratic bezier — control point offset perpendicular to midpoint
             let mid  = CGPoint(x: (fromEdge.x + toEdge.x)/2, y: (fromEdge.y + toEdge.y)/2)
             let perp = CGPoint(x: -dy/len * len * 0.12, y: dx/len * len * 0.12)
             let ctrl = CGPoint(x: mid.x + perp.x, y: mid.y + perp.y)
+
+            let isActive: Bool
+            if let sid = selectedCharacterID {
+                isActive = rel.fromID == sid || rel.toID == sid
+            } else {
+                isActive = false
+            }
 
             var path = Path()
             path.move(to: fromEdge)
             path.addQuadCurve(to: toEdge, control: ctrl)
 
-            ctx.stroke(path, with: .color(rel.type.color.opacity(0.85)),
-                       style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            if isActive {
+                // Bloom layer
+                var blurCtx = ctx
+                blurCtx.addFilter(.blur(radius: 7))
+                blurCtx.stroke(path, with: .color(rel.type.color.opacity(0.5)),
+                               style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                // Bright active arc
+                ctx.stroke(path, with: .color(rel.type.color),
+                           style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            } else {
+                let opacity: Double = selectedCharacterID == nil ? 0.85 : 0.22
+                ctx.stroke(path, with: .color(rel.type.color.opacity(opacity)),
+                           style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            }
 
             // Small arrowhead at toEdge
-            let arrowLen: CGFloat = 8
+            let arrowLen: CGFloat = isActive ? 10 : 8
             let angle = atan2(toEdge.y - ctrl.y, toEdge.x - ctrl.x)
             var arrow = Path()
             arrow.move(to: toEdge)
@@ -1275,11 +1517,12 @@ private struct RelationshipMapView: View {
             arrow.move(to: toEdge)
             arrow.addLine(to: CGPoint(x: toEdge.x - arrowLen * cos(angle + 0.4),
                                       y: toEdge.y - arrowLen * sin(angle + 0.4)))
-            ctx.stroke(arrow, with: .color(rel.type.color.opacity(0.85)),
-                       style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            let arrowOpacity: Double = isActive ? 1.0 : (selectedCharacterID == nil ? 0.85 : 0.22)
+            ctx.stroke(arrow, with: .color(rel.type.color.opacity(arrowOpacity)),
+                       style: StrokeStyle(lineWidth: isActive ? 2.5 : 2, lineCap: .round))
 
-            // Label at bezier midpoint
-            if !rel.label.isEmpty {
+            // Label at bezier midpoint (only shown when active or no selection)
+            if !rel.label.isEmpty && (isActive || selectedCharacterID == nil) {
                 let labelPt = CGPoint(
                     x: 0.25*fromEdge.x + 0.5*ctrl.x + 0.25*toEdge.x,
                     y: 0.25*fromEdge.y + 0.5*ctrl.y + 0.25*toEdge.y - 10
@@ -1321,13 +1564,16 @@ private struct RelationshipMapView: View {
     }
 
     private func handleTap(_ id: UUID) {
-        guard connectMode else { return }
-        if firstNodeID == nil {
-            firstNodeID = id
-        } else if firstNodeID != id {
-            pendingEdge  = PendingEdge(fromID: firstNodeID!, toID: id)
-            firstNodeID  = nil
-            connectMode  = false
+        if connectMode {
+            if firstNodeID == nil {
+                firstNodeID = id
+            } else if firstNodeID != id {
+                pendingEdge = PendingEdge(fromID: firstNodeID!, toID: id)
+                firstNodeID = nil
+                connectMode = false
+            }
+        } else {
+            selectedCharacterID = selectedCharacterID == id ? nil : id
         }
     }
 
@@ -1342,18 +1588,28 @@ private struct RelationshipMapView: View {
 private struct ArcNode: View {
     let char: WorldCharacter
     let isHighlighted: Bool
+    let isSelected: Bool
+    let isDimmed: Bool
     let connectMode: Bool
 
     var body: some View {
         VStack(spacing: 5) {
             ZStack {
+                // Selection glow ring
+                if isSelected {
+                    Circle()
+                        .fill(AppTheme.accentWorld.opacity(0.25))
+                        .frame(width: 70, height: 70)
+                        .blur(radius: 10)
+                }
                 Circle()
                     .fill(isHighlighted ? AppTheme.accentWorld : AppTheme.surface)
                     .frame(width: 52, height: 52)
-                    .shadow(color: .black.opacity(isHighlighted ? 0.22 : 0.10), radius: 6, y: 2)
+                    .shadow(color: .black.opacity(isHighlighted || isSelected ? 0.22 : 0.10), radius: 6, y: 2)
                 Circle()
-                    .stroke(isHighlighted ? AppTheme.accentWorld : AppTheme.border,
-                            lineWidth: isHighlighted ? 2.5 : 1.5)
+                    .stroke(isSelected ? AppTheme.accentWorld
+                                : (isHighlighted ? AppTheme.accentWorld : AppTheme.border),
+                            lineWidth: isSelected ? 2.5 : (isHighlighted ? 2.5 : 1.5))
                     .frame(width: 52, height: 52)
                 if char.hasImage {
                     Image(nsImage: char.resolvedImage)
@@ -1367,15 +1623,18 @@ private struct ArcNode: View {
                         .foregroundStyle(isHighlighted ? .white : AppTheme.textPrimary)
                 }
             }
-            .scaleEffect(connectMode ? 1.06 : 1.0)
+            .scaleEffect(connectMode ? 1.06 : (isSelected ? 1.08 : 1.0))
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: connectMode)
+            .animation(.spring(response: 0.22, dampingFraction: 0.65), value: isSelected)
 
             Text(char.name)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(AppTheme.textSecondary)
+                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? AppTheme.accentWorld : AppTheme.textSecondary)
                 .lineLimit(1)
                 .frame(maxWidth: 84)
         }
+        .opacity(isDimmed ? 0.3 : 1.0)
+        .animation(.easeInOut(duration: 0.18), value: isDimmed)
     }
 
     private func initials(_ name: String) -> String {

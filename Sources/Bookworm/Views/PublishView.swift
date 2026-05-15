@@ -155,18 +155,19 @@ struct PublishView: View {
         let labelFont   = NSFont(name: "Georgia", size: 9) ?? NSFont.systemFont(ofSize: 9)
         let captionFont = NSFont.systemFont(ofSize: 7.5)
 
-        // Draw text in PDF-native coordinates (y=0 at bottom, increasing upward).
+        // Draw text using CoreText — works on any thread (no NSGraphicsContext required).
+        // rect is in PDF native coords (y=0 at bottom). CTFrameDraw renders top-to-bottom within the frame.
         func drawText(_ text: String, in rect: CGRect, font: NSFont,
                       color: NSColor = .textColor, align: NSTextAlignment = .left) {
             guard !text.isEmpty else { return }
             let para = NSMutableParagraphStyle(); para.alignment = align
-            let str = NSAttributedString(string: text, attributes: [
+            let attrStr = NSAttributedString(string: text, attributes: [
                 .font: font, .foregroundColor: color, .paragraphStyle: para
             ])
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: pageH); ctx.scaleBy(x: 1, y: -1)
-            str.draw(in: CGRect(x: rect.minX, y: pageH - rect.maxY, width: rect.width, height: rect.height))
-            ctx.restoreGState()
+            let setter = CTFramesetterCreateWithAttributedString(attrStr)
+            let path = CGMutablePath(); path.addRect(rect)
+            let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil)
+            CTFrameDraw(frame, ctx)
         }
 
         // Draw image clipped to circle or rounded rect, scale-to-fill.
@@ -319,27 +320,30 @@ struct PublishView: View {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
 
-            var y = contentRect.minY
+            // paragraphTop tracks the PDF-coord top edge of the next paragraph.
+            // PDF y increases upward, so we start near the top and subtract each paragraph's height.
+            var paragraphTop = contentRect.maxY
             ctx.beginPDFPage(nil as CFDictionary?)
 
             for para in paragraphs {
                 let attrText = NSAttributedString(string: para + "\n",
-                    attributes: [.font: bodyFont, .foregroundColor: NSColor.textColor])
-                let framesetter = CTFramesetterCreateWithAttributedString(attrText)
+                    attributes: [.font: bodyFont, .foregroundColor: NSColor.black])
+                let setter = CTFramesetterCreateWithAttributedString(attrText)
                 let frameSize = CTFramesetterSuggestFrameSizeWithConstraints(
-                    framesetter, CFRange(location: 0, length: 0), nil,
+                    setter, CFRange(location: 0, length: 0), nil,
                     CGSize(width: contentRect.width, height: .greatestFiniteMagnitude), nil)
 
-                if y + frameSize.height > contentRect.maxY {
+                let paraH = frameSize.height + 4
+                if paragraphTop - paraH < contentRect.minY {
                     ctx.endPDFPage()
                     ctx.beginPDFPage(nil as CFDictionary?)
-                    y = contentRect.minY
+                    paragraphTop = contentRect.maxY
                 }
 
                 drawText(para,
-                         in: CGRect(x: margin, y: y, width: contentRect.width, height: frameSize.height + 4),
+                         in: CGRect(x: margin, y: paragraphTop - paraH, width: contentRect.width, height: paraH),
                          font: bodyFont)
-                y += frameSize.height + 10
+                paragraphTop -= paraH + 10
             }
             ctx.endPDFPage()
         }
