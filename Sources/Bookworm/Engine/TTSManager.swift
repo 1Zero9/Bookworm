@@ -2,267 +2,386 @@ import AVFoundation
 import Combine
 import AppKit
 
-final class TTSManager: NSObject, ObservableObject {
+// MARK: - Models
+
+struct TTSVoice: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let quality: String // "Premium", "Enhanced", "Standard", "Cloud"
+    let language: String
+}
+
+// MARK: - TTSProvider Protocol
+
+protocol TTSProvider: AnyObject {
+    var isPlaying: Bool { get }
+    var isPaused: Bool { get }
+    var spokenRange: NSRange? { get set }
+    
+    func speak(_ text: String, fromOffset offset: Int, rate: Float, voiceID: String, onRangeUpdate: @escaping (NSRange) -> Void, onCompletion: @escaping () -> Void)
+    func pause()
+    func resume()
+    func stop()
+    func reloadVoices() -> [TTSVoice]
+}
+
+// MARK: - Local macOS Implementation
+
+final class LocalSystemTTSProvider: NSObject, TTSProvider, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     private let synth = AVSpeechSynthesizer()
+    private let speechQueue = DispatchQueue(label: "com.bookworm.speechQueue", qos: .userInitiated)
     private var intentionallyStopping = false
-
-    // MARK: - Observable state
-    @Published var isPlaying = false
-    @Published var isPaused  = false
-    @Published var currentItemIndex = 0
-    @Published var bookmarks: [UUID: Int] = [:]
-
-    // Script items for the current session
-    private(set) var items: [SpeechItem] = []
-    private var currentChapterID: UUID? = nil
-
-    // MARK: - Voices
-    @Published var premiumVoices:  [AVSpeechSynthesisVoice] = []
-    @Published var enhancedVoices: [AVSpeechSynthesisVoice] = []
-    @Published var standardVoices: [AVSpeechSynthesisVoice] = []
-    @Published var allVoices:      [AVSpeechSynthesisVoice] = []
-    @Published var selectedVoiceID: String = ""
-    @Published var rate: Float = AVSpeechUtteranceDefaultSpeechRate
-
-    // MARK: - Init
-
+    private var activeUtteranceOffset = 0
+    
+    var isPlaying = false
+    var isPaused = false
+    var spokenRange: NSRange? = nil
+    
+    private var onRangeUpdateHandler: ((NSRange) -> Void)?
+    private var onCompletionHandler: (() -> Void)?
+    
     override init() {
         super.init()
         synth.delegate = self
-        reloadVoices()
+    }
+    
+    func speak(_ text: String, fromOffset offset: Int, rate: Float, voiceID: String, onRangeUpdate: @escaping (NSRange) -> Void, onCompletion: @escaping () -> Void) {
+        self.onRangeUpdateHandler = onRangeUpdate
+        self.onCompletionHandler = onCompletion
+        
+        isPlaying = true
+        isPaused = false
+        
+        speechQueue.async { [weak self] in
+            guard let self else { return }
+            
+            self.intentionallyStopping = true
+            self.synth.stopSpeaking(at: .immediate)
+            self.intentionallyStopping = false
+            
+            self.activeUtteranceOffset = offset
+            
+            // Take a slice of the prose from the offset to the end
+            let rawSpeechString: String
+            if offset < text.count {
+                let index = text.index(text.startIndex, offsetBy: offset)
+                rawSpeechString = String(text[index...])
+            } else {
+                rawSpeechString = ""
+            }
+            
+            let trimmed = rawSpeechString.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                DispatchQueue.main.async {
+                    self.isPlaying = false
+                    self.isPaused = false
+                    self.spokenRange = nil
+                    onCompletion()
+                }
+                return
+            }
+            
+            let utterance = AVSpeechUtterance(string: rawSpeechString)
+            if let voice = AVSpeechSynthesisVoice.speechVoices().first(where: { $0.identifier == voiceID }) {
+                utterance.voice = voice
+            }
+            
+            // Apple neural voices scale naturally using rate
+            utterance.rate = rate
+            
+            self.synth.speak(utterance)
+        }
+    }
+    
+    func pause() {
+        isPlaying = false
+        isPaused = true
+        speechQueue.async { [weak self] in
+            self?.synth.pauseSpeaking(at: .word)
+        }
+    }
+    
+    func resume() {
+        isPlaying = true
+        isPaused = false
+        speechQueue.async { [weak self] in
+            self?.synth.continueSpeaking()
+        }
+    }
+    
+    func stop() {
+        isPlaying = false
+        isPaused = false
+        spokenRange = nil
+        speechQueue.async { [weak self] in
+            guard let self else { return }
+            self.intentionallyStopping = true
+            self.synth.stopSpeaking(at: .immediate)
+            self.intentionallyStopping = false
+        }
+    }
+    
+    func reloadVoices() -> [TTSVoice] {
+        // Filter out low-fidelity system voices
+        let jokeVoices = ["albert", "bad news", "bells", "boing", "bubbles", "cellos", "good news", 
+                          "hysterical", "organ", "pipe organ", "princess", "trinoids", "whisper", "zarvox", "deranged"]
+        
+        let speechVoices = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+            .filter { voice in
+                let nameLower = voice.name.lowercased()
+                return !jokeVoices.contains { nameLower.contains($0) }
+            }
+            .sorted { $0.name < $1.name }
+            
+        let converted = speechVoices.map { voice in
+            let qualityStr: String
+            switch voice.quality {
+            case .premium:  qualityStr = "Premium"
+            case .enhanced: qualityStr = "Enhanced"
+            default:        qualityStr = "Standard"
+            }
+            return TTSVoice(id: voice.identifier, name: voice.name, quality: qualityStr, language: voice.language)
+        }
+        
+        // Retain only premium or enhanced voices to prevent robotic standard voice fallbacks
+        let highFidelity = converted.filter { $0.quality == "Premium" || $0.quality == "Enhanced" }
+        
+        // Fallback: If no high-fidelity voices are downloaded, supply natural standard voices
+        if highFidelity.isEmpty {
+            let naturalDefaultNames = ["samantha", "alex", "daniel", "karen", "tessa", "moira", "victoria", "fiona"]
+            return converted.filter { voice in
+                let nameL = voice.name.lowercased()
+                return naturalDefaultNames.contains { nameL.contains($0) }
+            }
+        }
+        
+        return highFidelity
+    }
+    
+    // MARK: - AVSpeechSynthesizerDelegate
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                           willSpeakRangeOfSpeechString characterRange: NSRange,
+                           utterance: AVSpeechUtterance) {
+        guard !intentionallyStopping else { return }
+        let absLocation = activeUtteranceOffset + characterRange.location
+        let absRange = NSRange(location: absLocation, length: characterRange.length)
+        onRangeUpdateHandler?(absRange)
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                           didFinish utterance: AVSpeechUtterance) {
+        guard !intentionallyStopping else { return }
+        isPlaying = false
+        isPaused = false
+        spokenRange = nil
+        onCompletionHandler?()
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+                           didCancel utterance: AVSpeechUtterance) {
+        guard !intentionallyStopping else { return }
+        isPlaying = false
+        isPaused = false
+        spokenRange = nil
+    }
+}
+
+// MARK: - TTSManager Coordinator
+
+final class TTSManager: NSObject, ObservableObject {
+    @Published var isPlaying = false
+    @Published var isPaused = false
+    @Published var spokenRange: NSRange? = nil
+    @Published var bookmarks: [UUID: Int] = [:]
+    @Published var activeChapterID: UUID? = nil
+    
+    @Published var premiumVoices: [TTSVoice] = []
+    @Published var enhancedVoices: [TTSVoice] = []
+    @Published var standardVoices: [TTSVoice] = []
+    @Published var allVoices: [TTSVoice] = []
+    @Published var selectedVoiceID: String = ""
+    @Published var rate: Float = 0.44 // Warmer, more deliberate default narration rate
+    
+    private let provider: TTSProvider
+    var activeText: String = ""
+    
+    // Sequential playback state
+    private var sentenceQueue: [AttributedSentence] = []
+    private var currentSentenceIndex: Int = 0
+    private var activeCharacters: [WorldCharacter] = []
+    private var isSequentialPlayback = false
+    
+    init(provider: TTSProvider = LocalSystemTTSProvider()) {
+        self.provider = provider
+        super.init()
+        self.reloadVoices()
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: NSApplication.didBecomeActiveNotification, object: nil)
     }
-
+    
     @objc private func appDidBecomeActive() { reloadVoices() }
-
+    
     func reloadVoices() {
-        let all = AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("en") }
-            .sorted { $0.name < $1.name }
-        premiumVoices  = all.filter { $0.quality == .premium }
-        enhancedVoices = all.filter { $0.quality == .enhanced }
-        standardVoices = all.filter { $0.quality == .default }
-        allVoices = all
-        if selectedVoiceID.isEmpty || !all.contains(where: { $0.identifier == selectedVoiceID }) {
-            selectedVoiceID = (premiumVoices.first ?? enhancedVoices.first ?? standardVoices.first)?.identifier ?? ""
+        let voices = provider.reloadVoices()
+        self.allVoices = voices
+        self.premiumVoices = voices.filter { $0.quality == "Premium" }
+        self.enhancedVoices = voices.filter { $0.quality == "Enhanced" }
+        self.standardVoices = voices.filter { $0.quality == "Standard" }
+        
+        if selectedVoiceID.isEmpty || !voices.contains(where: { $0.id == selectedVoiceID }) {
+            if let bestPremium = premiumVoices.first {
+                selectedVoiceID = bestPremium.id
+            } else if let bestEnhanced = enhancedVoices.first {
+                selectedVoiceID = bestEnhanced.id
+            } else if let bestStandard = standardVoices.first {
+                selectedVoiceID = bestStandard.id
+            } else {
+                selectedVoiceID = voices.first?.id ?? ""
+            }
         }
     }
-
-    var selectedVoice: AVSpeechSynthesisVoice? {
-        allVoices.first { $0.identifier == selectedVoiceID }
+    
+    var selectedVoice: TTSVoice? {
+        allVoices.first { $0.id == selectedVoiceID }
     }
-
-    // MARK: - Playback
-
-    func speakScript(_ script: String, chapterID: UUID? = nil, from startIndex: Int = 0) {
-        intentionallyStopping = true
-        synth.stopSpeaking(at: .immediate)
-        intentionallyStopping = false
-
-        items = buildItems(from: script)
-        currentChapterID = chapterID
-        currentItemIndex = max(0, min(startIndex, max(0, items.count - 1)))
-        speakCurrentItem()
+    
+    func speakTest(_ text: String, voiceID: String) {
+        self.stop()
+        provider.speak(text, fromOffset: 0, rate: rate, voiceID: voiceID, onRangeUpdate: { _ in }, onCompletion: {})
     }
-
-    func speakRaw(_ text: String, chapterID: UUID? = nil) {
-        intentionallyStopping = true
-        synth.stopSpeaking(at: .immediate)
-        intentionallyStopping = false
-
-        items = splitIntoSentences(text).map {
-            SpeechItem(text: $0.text, postDelay: $0.pause, pitch: 1.0, rateMultiplier: 1.0, groupIndex: 0)
+    
+    func speak(_ text: String, chapterID: UUID? = nil, fromOffset offset: Int = 0, worldCharacters: [WorldCharacter] = []) {
+        self.activeText = text
+        self.activeChapterID = chapterID
+        self.activeCharacters = worldCharacters
+        
+        // 1. Parse sentences using DialogueAttributionEngine
+        let allSentences = DialogueAttributionEngine.parse(text: text, worldCharacters: worldCharacters)
+        
+        // 2. Filter or find which sentence index matches the offset
+        let startIndex = allSentences.firstIndex(where: { $0.range.contains(offset) || $0.range.location >= offset }) ?? 0
+        
+        // 3. Keep track of the queue
+        self.sentenceQueue = allSentences
+        self.currentSentenceIndex = startIndex
+        self.isSequentialPlayback = true
+        
+        // 4. Start sequential playback of the current sentence
+        self.speakCurrentSentence()
+    }
+    
+    private func speakCurrentSentence() {
+        guard isSequentialPlayback, currentSentenceIndex < sentenceQueue.count else {
+            // Reached the end of the chapter playback!
+            DispatchQueue.main.async {
+                self.isPlaying = false
+                self.isPaused = false
+                self.spokenRange = nil
+                self.isSequentialPlayback = false
+            }
+            return
         }
-        currentChapterID = chapterID
-        currentItemIndex = 0
-        speakCurrentItem()
+        
+        let sentence = sentenceQueue[currentSentenceIndex]
+        
+        // Find which voice identifier to use for this sentence
+        let voiceID: String
+        if let charID = sentence.speakerCharacterID,
+           let character = activeCharacters.first(where: { $0.id == charID }),
+           !character.voiceIdentifier.isEmpty {
+            voiceID = character.voiceIdentifier
+        } else {
+            // Fallback to global narration voice selection
+            voiceID = selectedVoiceID
+        }
+        
+        provider.speak(activeText, fromOffset: sentence.range.location, rate: rate, voiceID: voiceID, onRangeUpdate: { [weak self] range in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                self.spokenRange = range
+                self.isPlaying = self.provider.isPlaying
+                self.isPaused = self.provider.isPaused
+                
+                // Track precise character offset in bookmarks
+                if let chID = self.activeChapterID {
+                    self.bookmarks[chID] = range.location
+                }
+            }
+        }, onCompletion: { [weak self] in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if self.isSequentialPlayback {
+                    // Advance to the next sentence!
+                    self.currentSentenceIndex += 1
+                    self.speakCurrentSentence()
+                }
+            }
+        })
+        
+        self.isPlaying = provider.isPlaying
+        self.isPaused = provider.isPaused
     }
-
-    /// Seek to the first sentence in a content group (used by tap-to-play in script view).
-    func seekToGroup(_ groupIndex: Int, in script: String, chapterID: UUID? = nil) {
-        let builtItems = buildItems(from: script)
-        let idx = builtItems.firstIndex { $0.groupIndex >= groupIndex } ?? 0
-        speakScript(script, chapterID: chapterID, from: idx)
-    }
-
+    
     func pause() {
-        synth.pauseSpeaking(at: .word)
-        isPlaying = false
-        isPaused  = true
+        provider.pause()
+        self.isPlaying = provider.isPlaying
+        self.isPaused = provider.isPaused
     }
-
+    
     func resume() {
-        synth.continueSpeaking()
-        isPlaying = true
-        isPaused  = false
+        provider.resume()
+        self.isPlaying = provider.isPlaying
+        self.isPaused = provider.isPaused
     }
-
+    
     func stop() {
-        if let id = currentChapterID, !items.isEmpty {
-            bookmarks[id] = currentItemIndex
+        self.isSequentialPlayback = false
+        self.sentenceQueue = []
+        self.currentSentenceIndex = 0
+        if let id = activeChapterID, let range = spokenRange {
+            bookmarks[id] = range.location
         }
-        intentionallyStopping = true
-        synth.stopSpeaking(at: .immediate)
-        intentionallyStopping = false
-        isPlaying = false
-        isPaused  = false
+        provider.stop()
+        self.isPlaying = provider.isPlaying
+        self.isPaused = provider.isPaused
+        self.spokenRange = nil
     }
-
+    
     func clearBookmark(for chapterID: UUID) {
         bookmarks.removeValue(forKey: chapterID)
     }
-
+    
+    func skipBackward(seconds: Double = 10) {
+        guard let chID = activeChapterID, let range = spokenRange else { return }
+        let charOffset = Int(seconds * 15) // ~15 chars per sec at typical speaking rate
+        let newOffset = max(0, range.location - charOffset)
+        speak(activeText, chapterID: chID, fromOffset: newOffset, worldCharacters: activeCharacters)
+    }
+    
+    func skipForward(seconds: Double = 10) {
+        guard let chID = activeChapterID, let range = spokenRange else { return }
+        let charOffset = Int(seconds * 15)
+        let newOffset = min(activeText.count - 1, range.location + charOffset)
+        speak(activeText, chapterID: chID, fromOffset: newOffset, worldCharacters: activeCharacters)
+    }
+    
     func openVoiceSettings() {
-        NSWorkspace.shared.open(
-            URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?SpeechPanel")!)
-    }
-
-    // MARK: - Private — one item at a time
-
-    private func speakCurrentItem() {
-        guard currentItemIndex < items.count else {
-            DispatchQueue.main.async { self.isPlaying = false; self.isPaused = false }
-            return
-        }
-        let item = items[currentItemIndex]
-        let u = AVSpeechUtterance(string: item.text)
-        u.voice             = selectedVoice
-        u.rate              = rate * item.rateMultiplier
-        u.pitchMultiplier   = item.pitch
-        u.postUtteranceDelay = item.postDelay
-        synth.speak(u)
-        DispatchQueue.main.async {
-            self.isPlaying = true
-            self.isPaused  = false
-        }
-    }
-
-    // MARK: - Script → SpeechItem array
-
-    struct SpeechItem {
-        let text: String
-        let postDelay: TimeInterval
-        let pitch: Float
-        let rateMultiplier: Float
-        let groupIndex: Int   // which content block this belongs to (for tap-to-seek)
-    }
-
-    func buildItems(from script: String) -> [SpeechItem] {
-        var result: [SpeechItem] = []
-        var buffer: [String] = []
-        var isDialogue = false
-        var speaker = ""
-        var group = 0
-
-        func flush(sectionDelay: TimeInterval) {
-            guard !buffer.isEmpty else { return }
-            let text = buffer.joined(separator: " ")
-            buffer = []
-            let sentences = splitIntoSentences(text)
-            for (i, s) in sentences.enumerated() {
-                let delay = (i == sentences.count - 1) ? sectionDelay : s.pause
-                let pitch: Float  = isDialogue ? pitchFor(speaker: speaker) : 1.0
-                let rateM: Float  = isDialogue ? 1.06 : 1.0
-                result.append(SpeechItem(text: s.text, postDelay: delay,
-                                         pitch: pitch, rateMultiplier: rateM, groupIndex: group))
+        let urls = [
+            "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Speech",
+            "x-apple.systempreferences:com.apple.Accessibility-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.universalaccess?SpeechPanel"
+        ]
+        
+        for urlStr in urls {
+            if let url = URL(string: urlStr) {
+                if NSWorkspace.shared.open(url) {
+                    print("[TTSManager] Opened Spoken Content Settings URL: \(urlStr)")
+                    return
+                }
             }
-            group += 1
-        }
-
-        for raw in script.components(separatedBy: "\n") {
-            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty else { continue }
-            switch t {
-            case "[PAUSE]":          flush(sectionDelay: 1.5)
-            case "[DRAMATIC BEAT]":  flush(sectionDelay: 2.5)
-            case "[SCENE OPEN]":     flush(sectionDelay: 1.0)
-            case "[END SCENE]", "[SCENE BREAK]": flush(sectionDelay: 0.8)
-            case "[NARRATOR]":
-                flush(sectionDelay: 0.6)
-                isDialogue = false; speaker = ""
-            case let cue where cue.hasPrefix("[") && cue.hasSuffix("]"):
-                flush(sectionDelay: 0.4)
-                speaker = String(cue.dropFirst().dropLast())
-                isDialogue = true
-            default:
-                buffer.append(t)
-            }
-        }
-        flush(sectionDelay: 0)
-        return result
-    }
-
-    // MARK: - Sentence splitting with punctuation-aware pauses
-
-    struct Sentence { let text: String; let pause: TimeInterval }
-
-    func splitIntoSentences(_ text: String) -> [Sentence] {
-        var result: [Sentence] = []
-        var current = ""
-        var i = text.startIndex
-
-        func commit(_ pause: TimeInterval) {
-            let t = current.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { result.append(Sentence(text: t, pause: pause)) }
-            current = ""
-        }
-
-        while i < text.endIndex {
-            let ch = text[i]
-            current.append(ch)
-            let next = text.index(after: i)
-            let atEnd = next == text.endIndex
-            let nextIsSpace = !atEnd && text[next] == " "
-
-            if (ch == "—" || ch == "–") && (atEnd || nextIsSpace) {
-                commit(0.20)
-                if nextIsSpace { i = next }
-            } else if ch == "." && current.hasSuffix("...") && (atEnd || nextIsSpace) {
-                commit(0.65)
-                if nextIsSpace { i = next }
-            } else if (ch == "." || ch == "!" || ch == "?") && (atEnd || nextIsSpace) {
-                commit(ch == "." ? 0.35 : 0.45)
-                if nextIsSpace { i = next }
-            }
-
-            guard i < text.endIndex else { break }
-            i = text.index(after: i)
-        }
-
-        let tail = current.trimmingCharacters(in: .whitespaces)
-        if !tail.isEmpty { result.append(Sentence(text: tail, pause: 0)) }
-        return result.filter { !$0.text.isEmpty }
-    }
-
-    private func pitchFor(speaker: String) -> Float {
-        guard !speaker.isEmpty else { return 1.0 }
-        let hash = speaker.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        return 0.88 + Float(abs(hash) % 10) / 10.0 * 0.24
-    }
-}
-
-// MARK: - Delegate
-
-extension TTSManager: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
-                           didFinish utterance: AVSpeechUtterance) {
-        guard !intentionallyStopping else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.intentionallyStopping else { return }
-            self.currentItemIndex += 1
-            self.speakCurrentItem()
-        }
-    }
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
-                           didCancel utterance: AVSpeechUtterance) {
-        guard !intentionallyStopping else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.intentionallyStopping else { return }
-            self.isPlaying = false
-            self.isPaused  = false
         }
     }
 }

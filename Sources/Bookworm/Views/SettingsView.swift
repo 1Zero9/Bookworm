@@ -45,6 +45,7 @@ struct SettingsView: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                    .help("Close settings panel")
             }
             .buttonStyle(.plain)
         }

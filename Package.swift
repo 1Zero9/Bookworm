@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "Bookworm",
             path: "Sources/Bookworm",
+            exclude: ["Media"],
             resources: [.copy("Assets")]
         )
     ]

@@ -68,10 +68,33 @@ enum ContextManager {
     // MARK: - Character detection
 
     static func detectCharacters(in text: String, vault: [WorldCharacter]) -> [WorldCharacter] {
-        let lower = text.lowercased()
+        guard !text.isEmpty else { return [] }
         return vault.filter { char in
+            var targets = [char.name]
             let firstName = char.name.split(separator: " ").first.map(String.init) ?? char.name
-            return lower.contains(firstName.lowercased())
+            if firstName != char.name {
+                targets.append(firstName)
+            }
+            targets.append(contentsOf: char.aliasList)
+            
+            for target in targets {
+                let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                
+                let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+                let pattern = "\\b\(escaped)\\b"
+                if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                    let range = NSRange(text.startIndex..<text.endIndex, in: text)
+                    if regex.firstMatch(in: text, options: [], range: range) != nil {
+                        return true
+                    }
+                } else {
+                    if text.range(of: trimmed, options: [.caseInsensitive]) != nil {
+                        return true
+                    }
+                }
+            }
+            return false
         }
     }
 

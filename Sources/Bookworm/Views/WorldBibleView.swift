@@ -72,6 +72,31 @@ private struct FlexWorldBible: Decodable {
         }
     }
 
+    enum FlexAliases: Decodable {
+        case string(String)
+        case array([String])
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let str = try? container.decode(String.self) {
+                self = .string(str)
+                return
+            }
+            if let arr = try? container.decode([String].self) {
+                self = .array(arr)
+                return
+            }
+            self = .string("")
+        }
+
+        var asString: String {
+            switch self {
+            case .string(let s): return s
+            case .array(let a): return a.joined(separator: ", ")
+            }
+        }
+    }
+
     struct FlexCharacter: Decodable {
         // Bookworm native keys — id decoded as String so invalid UUIDs don't throw
         let idString:             String?
@@ -84,6 +109,7 @@ private struct FlexWorldBible: Decodable {
         let sensoryAnchors:       String?
         let imageRef:             String?
         let stats:                FlexStats?
+        let aliases:              FlexAliases?
         // External / AI-generated keys
         let name:              String?
         let role:              String?
@@ -98,7 +124,7 @@ private struct FlexWorldBible: Decodable {
             case idString = "id"
             case order, name, role, traits, status, backstory, voice, description
             case physicalDescription, psychologicalProfile, personalVoice, notes
-            case biography, sensoryAnchors, imageRef, stats
+            case biography, sensoryAnchors, imageRef, stats, aliases
             case sensory_anchors = "sensory_anchors"
         }
 
@@ -111,6 +137,7 @@ private struct FlexWorldBible: Decodable {
             c.personalVoice        = personalVoice ?? voice ?? ""
             c.sensoryAnchors       = sensoryAnchors ?? sensory_anchors ?? ""
             c.imageRef             = imageRef
+            c.aliases              = aliases?.asString ?? ""
             if let s = stats { c.stats = s.asCharacterStats }
             var extra: [String] = []
             if let r = role    { extra.append("Role: \(r)") }
@@ -168,11 +195,12 @@ private struct FlexWorldBible: Decodable {
 
 struct WorldBibleView: View {
     @Environment(Book.self) private var book
+    @EnvironmentObject private var layout: LayoutStore
     @State private var tab: Tab = .coreLedger
     @State private var importError: String? = nil
     @State private var showImportError = false
 
-    enum Tab { case coreLedger, characters, arcMap }
+    enum Tab { case coreLedger, characters, arcMap, timeline, arcSimulator }
 
     var body: some View {
         @Bindable var book = book
@@ -183,59 +211,100 @@ struct WorldBibleView: View {
                 subtitle: "genre, rules, people & places",
                 accent: AppTheme.accentWorld
             ) {
-                HStack(spacing: 4) {
-                    WorldBibleTab(label: "Core Ledger", icon: "doc.text.fill",                         tab: .coreLedger, current: $tab)
-                    WorldBibleTab(label: "Characters",  icon: "person.2.fill",                         tab: .characters,  current: $tab)
-                    WorldBibleTab(label: "Arc Map",     icon: "point.3.connected.trianglepath.dotted", tab: .arcMap,      current: $tab)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        WorldBibleTab(label: "Core Ledger",   icon: "doc.text.fill",                         tab: .coreLedger,     current: $tab)
+                        WorldBibleTab(label: "Characters",    icon: "person.2.fill",                         tab: .characters,     current: $tab)
+                        WorldBibleTab(label: "Arc Map",       icon: "point.3.connected.trianglepath.dotted", tab: .arcMap,         current: $tab)
+                        WorldBibleTab(label: "Timeline",      icon: "calendar.badge.clock",                  tab: .timeline,       current: $tab)
+                        WorldBibleTab(label: "Arc Simulator", icon: "waveform.path.ecg.rectangle",           tab: .arcSimulator,   current: $tab)
 
-                    Divider().frame(height: 16).padding(.horizontal, 2)
+                        Divider().frame(height: 16).padding(.horizontal, 2)
 
-                    Button { importWorldBible() } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.arrow.down").font(.system(size: 10, weight: .medium))
-                            Text("Import").font(.system(size: 11, weight: .medium))
+                        Button { importWorldBible() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.down").font(.system(size: 10, weight: .medium))
+                                Text("Import")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .foregroundStyle(AppTheme.accentWorld)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(AppTheme.accentWorld.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+                            .help("Import world bible from a JSON file")
                         }
-                        .foregroundStyle(AppTheme.accentWorld)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(AppTheme.accentWorld.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Import world bible from a JSON file")
+                        .buttonStyle(.plain)
 
-                    Button { pickMediaFolder() } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "folder").font(.system(size: 10, weight: .medium))
-                            Text("Media…").font(.system(size: 11, weight: .medium))
+                        Button { pickMediaFolder() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "folder").font(.system(size: 10, weight: .medium))
+                                Text("Media…")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .foregroundStyle(ImageManager.shared.customMediaDirectory != nil
+                                             ? AppTheme.accentNarrate : AppTheme.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(AppTheme.border.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                            .help(ImageManager.shared.customMediaDirectory.map { "Media folder: \($0.path)\nClick to change" }
+                                  ?? "Set the folder containing character/thing images")
                         }
-                        .foregroundStyle(ImageManager.shared.customMediaDirectory != nil
-                                         ? AppTheme.accentNarrate : AppTheme.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(AppTheme.border.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .help(ImageManager.shared.customMediaDirectory.map { "Media folder: \($0.path)\nClick to change" }
-                          ?? "Set the folder containing character/thing images")
+                        .buttonStyle(.plain)
 
-                    Button { exportWorldBible() } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.arrow.up").font(.system(size: 10, weight: .medium))
-                            Text("Export").font(.system(size: 11, weight: .medium))
+                        Button { exportWorldBible() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up").font(.system(size: 10, weight: .medium))
+                                Text("Export")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                            .help("Export world bible as a shareable template")
                         }
-                        .foregroundStyle(AppTheme.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                        .buttonStyle(.plain)
+
+                        Divider().frame(height: 16).padding(.horizontal, 2)
+
+                        // Curated Editorial Theme Picker
+                        HStack(spacing: 6) {
+                            ForEach(WorldAccent.allCases, id: \.self) { accent in
+                                Button {
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                                        layout.worldAccent = accent
+                                    }
+                                } label: {
+                                    Circle()
+                                        .fill(accent.color)
+                                        .frame(width: 12, height: 12)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: layout.worldAccent == accent ? 2 : 0)
+                                        )
+                                        .shadow(color: accent.color.opacity(0.35), radius: 2, y: 1)
+                                }
+                                .buttonStyle(.plain)
+                                .help(accent.label)
+                            }
+                        }
+                        .padding(.horizontal, 4)
                     }
-                    .buttonStyle(.plain)
-                    .help("Export world bible as a shareable template")
+                    .padding(.vertical, 6)
                 }
             }
 
             Divider().background(AppTheme.border)
 
             switch tab {
-            case .coreLedger: CoreLedgerForm(ledger: book.coreLedger)
-            case .characters: CharacterVaultView(book: book)
-            case .arcMap:     RelationshipMapView()
+            case .coreLedger:   CoreLedgerForm(ledger: book.coreLedger)
+            case .characters:   CharacterVaultView(book: book)
+            case .arcMap:       RelationshipMapView()
+            case .timeline:     TimelineVisualizerView()
+            case .arcSimulator: AntigravityWorkspaceView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -402,6 +471,7 @@ struct WorldBibleView: View {
                 if !c.sensoryAnchors.isEmpty       { existing.sensoryAnchors       = c.sensoryAnchors }
                 if !c.notes.isEmpty                { existing.notes                = c.notes }
                 if !c.stats.isEmpty                { existing.stats                = c.stats }
+                if !c.aliases.isEmpty              { existing.aliases              = c.aliases }
                 if c.kind != .character            { existing.kind                 = c.kind }
                 if let ref = c.imageRef, !ref.isEmpty { existing.imageRef = ref }
             } else {
@@ -435,6 +505,8 @@ private struct WorldBibleTab: View {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 10, weight: .medium))
                 Text(label)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .buttonStyle(NavPillButtonStyle(isActive: current == tab, accent: AppTheme.accentWorld))
@@ -566,9 +638,9 @@ private struct CharacterVaultView: View {
                                     .font(.system(size: 24))
                                     .foregroundStyle(.white.opacity(0.8))
                                     .padding(20)
+                                    .help("Close")
                             }
                             .buttonStyle(.plain)
-                            .help("Close")
                         }
                         Spacer()
                     }
@@ -587,9 +659,9 @@ private struct CharacterVaultView: View {
                     .foregroundStyle(AppTheme.textSecondary)
                     .frame(width: 32, height: 44)
                     .contentShape(Rectangle())
+                    .help("Expand portrait")
             }
             .buttonStyle(.plain)
-            .help("Expand portrait")
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -614,9 +686,9 @@ private struct CharacterVaultView: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                        .help("Minimise portrait")
                 }
                 .buttonStyle(GhostToolButtonStyle())
-                .help("Minimise portrait")
             }
 
             Image(nsImage: char.resolvedImage)
@@ -675,9 +747,9 @@ private struct CharacterVaultView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.accentWorld)
                         .padding(5)
+                        .help(activeKind == .character ? "Add character" : "Add place or thing")
                 }
                 .buttonStyle(.plain)
-                .help(activeKind == .character ? "Add character" : "Add place or thing")
             }
             .padding(.horizontal, 10)
             .frame(height: 38)
@@ -704,11 +776,11 @@ private struct CharacterVaultView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(AppTheme.textSecondary)
                         .padding(8)
+                        .help("Delete selected entry")
                 }
                 .buttonStyle(.plain)
                 .disabled(selectedID == nil)
                 .opacity(selectedID == nil ? 0.3 : 1)
-                .help("Delete selected entry")
                 .frame(maxWidth: .infinity)
                 .background(AppTheme.background)
             }
@@ -1013,6 +1085,7 @@ private struct ArcCharacterDetailView: View {
 // MARK: - Character Vault detail
 
 private struct CharacterDetailView: View {
+    @EnvironmentObject private var tts: TTSManager
     @Bindable var character: WorldCharacter
 
     var body: some View {
@@ -1050,6 +1123,21 @@ private struct CharacterDetailView: View {
                         .foregroundStyle(AppTheme.textPrimary)
                 }
 
+                // Aliases / Titles / Pronouns
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(character.kind == .character ? "ALIASES / TITLES / PRONOUNS" : "ALIASES / ALTERNATE NAMES")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.accentWorld)
+                        .tracking(0.8)
+                    TextField(character.kind == .character ? "e.g. Alex, The Captain, He/Him" : "e.g. Atlantis, The Sunken City",
+                              text: $character.aliases)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .padding(10)
+                        .background(AppTheme.border.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+                }
+
                 Divider().background(AppTheme.border)
 
                 if character.kind == .character {
@@ -1065,6 +1153,7 @@ private struct CharacterDetailView: View {
                     CharDetailField(label: "Voice & Speech",
                                     placeholder: "How they talk, verbal tics, vocabulary, accent…",
                                     text: $character.personalVoice)
+                    voicePickerSection
                     CharDetailField(label: "Sensory Anchors",
                                     placeholder: "Smell, sound, touch, habit — the details that make them real on the page…",
                                     text: $character.sensoryAnchors)
@@ -1191,9 +1280,9 @@ private struct CharacterDetailView: View {
                                 .offset(x: 4, y: 4)
                         }
                     }
+                    .help("Click to choose an image")
                 }
                 .buttonStyle(.plain)
-                .help("Click to choose an image")
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Click the image to change")
@@ -1213,6 +1302,67 @@ private struct CharacterDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var voicePickerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ASSIGN NARRATION VOICE")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.accentWorld)
+                .tracking(0.8)
+            
+            HStack(spacing: 8) {
+                Picker("Narration Voice", selection: $character.voiceIdentifier) {
+                    Text("Narrator Default").tag("")
+                    
+                    if !tts.premiumVoices.isEmpty {
+                        Section("⭐️ Premium") {
+                            ForEach(tts.premiumVoices) { voice in
+                                Text("\(voice.name) (\(voice.language))").tag(voice.id)
+                            }
+                        }
+                    }
+                    if !tts.enhancedVoices.isEmpty {
+                        Section("✨ Enhanced") {
+                            ForEach(tts.enhancedVoices) { voice in
+                                Text("\(voice.name) (\(voice.language))").tag(voice.id)
+                            }
+                        }
+                    }
+                    if !tts.standardVoices.isEmpty {
+                        Section("Standard") {
+                            ForEach(tts.standardVoices) { voice in
+                                Text("\(voice.name) (\(voice.language))").tag(voice.id)
+                            }
+                        }
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                
+                Button {
+                    let voiceID = character.voiceIdentifier.isEmpty ? tts.selectedVoiceID : character.voiceIdentifier
+                    let previewText = "Hello, this is my voice as \(character.name)."
+                    tts.speakTest(previewText, voiceID: voiceID)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 11))
+                        Text("Test")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(AppTheme.accentWorld)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.accentWorld.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(tts.allVoices.isEmpty)
+            }
+            .help("Choose a custom voice for this character's dialogue playback in the Audiobook Studio.")
         }
     }
 
@@ -1323,9 +1473,9 @@ private struct RelationshipMapView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(connectMode ? AppTheme.accentWorld : AppTheme.accentWorld.opacity(0.12),
                             in: RoundedRectangle(cornerRadius: 7))
+                .help("Click two character nodes to draw a relationship arc")
             }
             .buttonStyle(.plain)
-            .help("Click two character nodes to draw a relationship arc")
 
             Button {
                 book.worldMapPositions.removeAll()
@@ -1335,9 +1485,9 @@ private struct RelationshipMapView: View {
                     .foregroundStyle(AppTheme.textSecondary)
                     .padding(6)
                     .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                    .help("Reset node layout to circle")
             }
             .buttonStyle(.plain)
-            .help("Reset node layout to circle")
 
             if !book.chapters.isEmpty {
                 Divider().frame(height: 16)
@@ -1690,9 +1840,9 @@ private struct RelationshipRow: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(AppTheme.textSecondary)
                         .padding(5)
+                        .help("Remove arc")
                 }
                 .buttonStyle(.plain)
-                .help("Remove arc")
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)

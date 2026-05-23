@@ -18,6 +18,16 @@ enum GeminiError: Error, LocalizedError {
 
 final class GeminiClient {
     static let shared = GeminiClient()
+    
+    /// Safely strips markdown code fences (e.g., ```json and ```) and trims whitespace from a raw AI string response.
+    static func cleanJsonString(_ raw: String) -> String {
+        var clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.hasPrefix("```json") { clean = String(clean.dropFirst(7)) }
+        if clean.hasPrefix("```")     { clean = String(clean.dropFirst(3)) }
+        if clean.hasSuffix("```")     { clean = String(clean.dropLast(3)) }
+        return clean.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private let base = "https://generativelanguage.googleapis.com/v1beta/models"
 
     func generate(prompt: String) async throws -> String {
@@ -63,5 +73,35 @@ final class GeminiClient {
             throw GeminiError.noContent
         }
         return text
+    }
+
+    func summarizeChapter(text: String, title: String) async throws -> String {
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanText.isEmpty {
+            return "An empty chapter titled '\(title)'."
+        }
+        
+        let prompt = """
+        You are an expert editorial assistant. Distill the following chapter prose (titled "\(title)") into a single, punchy, elegant sentence summary/synopsis under 25 words.
+        
+        Return the result as a JSON object with a single key "synopsis".
+        
+        Chapter Title: \(title)
+        Chapter Content:
+        \(cleanText)
+        """
+        
+        let rawJson = try await generate(prompt: prompt)
+        let cleanJson = Self.cleanJsonString(rawJson)
+        
+        struct SummaryPayload: Decodable {
+            let synopsis: String
+        }
+        
+        guard let data = cleanJson.data(using: .utf8) else {
+            throw GeminiError.decodingFailed("Could not encode response to UTF-8")
+        }
+        let decoded = try JSONDecoder().decode(SummaryPayload.self, from: data)
+        return decoded.synopsis
     }
 }

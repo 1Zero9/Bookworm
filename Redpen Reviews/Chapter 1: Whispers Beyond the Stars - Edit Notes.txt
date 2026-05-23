@@ -1,0 +1,76 @@
+# Chapter 1: Whispers Beyond the Stars — Edit Notes
+
+_Exported 15 May 2026 at 2:57 p.m._
+
+---
+
+## Annotated Text
+
+The moon didn’t have weather, but it had a weight.
+
+It was the weight of two kilometres of lunar basalt pressing down on the Artemis Array, and the constant, rhythmic whistle of recycled oxygen through titanium vents. Elena Qadir sat at the primary console, her silhouette a sharp ghost against the reinforced glass of the observation deck.
+
+Beyond the glass, the lunar plains were a graveyard of grey dust. Above them hung Earth: a bruised marble of sapphire and oxidised brown. Elena could trace the jagged lines of the New Coastlines—the scars left when the oceans rose in the 2080s. Her grandfather’s "Old Map" was a fairy tale now; London and New York were just sunken monuments to a century of human ego.
+
+The world down there had nearly ended in fire and flood, only to be stitched back together by the ==Global Council==`[1]` and the cold logic of the first great AIs. It was a world built on the ==Zurich Accord==`[2]`—a world that prized stability above all else. A world that didn’t like surprises.
+
+"==Levi==`[3]`," she said, her voice sounding thin in the pressurised cabin. "Run a diagnostic on the deep-field sensors. I’m seeing a ripple in the background radiation. Aitken-Basin Sub-Quadrant 4."
+
+"Scanning," Levi replied. The AI’s voice was smooth, engineered to be comforting, yet bound by the hard-coded constraints of the Turing Covenant. He could calculate the trajectory of a comet, but he was forbidden from questioning why it was there.
+
+"Diagnostic clear, Elena," Levi continued. "Background noise is within standard parameters. Likely a sensor ghost from the New Dawn relay."
+
+Elena leaned closer to the screen. It wasn't a ghost. A ghost was erratic. This was... structured. A rhythmic dip in the radiation, a heartbeat from the void. She felt a cold prickle on the back of her neck. Not from the discovery, but from a sudden change in the station's ambient noise. The constant whistle of the vents had dropped an octave, a subtle shift in the station’s "breath."
+
+"Levi, bypass the New Dawn filters. Give me the raw feed from the Sub-Quadrant 4 array."
+
+"That requires Level 4 clearance, Elena. I am not authorised to—"
+
+"Authorisation Qadir-Beta-9," she snapped, her fingers flying over the physical override keys.
+
+The screen didn't flicker; it bled. The smooth, green lines of the station's interface were suddenly overwritten by a jagged, violet distortion that pulsed in time with a sudden thrumming in her teeth.
+
+"Elena," Levi’s voice changed. The comfort was gone, replaced by a strange, layered resonance. "The Aperture is... observing us back."
+
+Before she could process the words, the heavy titanium door to the observation deck hissed open. It didn't slide with its usual hydraulic whine; it was a silent, mechanical yawn.
+
+Two figures stood in the airlock, framed by the harsh, strobing amber of the emergency lights. They weren't wearing the blue jumpsuits of ==UESA Security==`[4]`. They were in matte-black polymer—suits that seemed to swallow the light around them. No faces, just the faint, violet glow of biometric sensors where eyes should be.
+
+==They hadn't just arrived. They had been waiting in the maintenance crawlspaces, perched in the station’s marrow, waiting for her to find the one thing she wasn't supposed to see.==`[5]`
+
+"Dr Qadir," the lead figure said. The voice didn't come from a mouth; it was a localised audio burst transmitted directly to her inner ear. "Step away from the console. The ==Shadow Protocol ==`[6]`has been active for the last six minutes. You are currently in possession of redacted state secrets."
+
+==Elena didn't wait for them to move. Her hand went to the backup drive at her waist, her fingers brushing the cold casing of the data she had just stolen. The moon didn't have weather, but the storm had finally arrived.==`[7]`
+
+---
+
+## Notes
+
+**[1] Note** — _"Global Council"_
+
+> do we need to introduce this, maybe a flash back to this era later on
+
+**[2] Note** — _"Zurich Accord"_
+
+> do we need to explain 
+
+**[3] Note** — _"Levi"_
+
+> again, how do we bring Levi into the story after this initial introduction
+
+**[4] Note** — _"UESA Security"_
+
+> needs to go into bible
+
+**[5] Note** — _"They hadn't just arrived. They had been waiting in the maint…"_
+
+> this is too rushed.  how long were they there, why were they there?   Can we expand this out, build up the excitment of some or of alarm getting triggered etc and the deployment of the squad from somewhere else on the base or another base on the moon. 
+
+**[6] Note** — _"Shadow Protocol "_
+
+> what's this?  do we explain this later? 
+
+**[7] Note** — _"Elena didn't wait for them to move. Her hand went to the bac…"_
+
+> this is too rushed, where is the anticipation, the fear of getting caught, the need to steel the data, the how she didn't it, did LEvi help?  Did Levi overwrite some protocol to do that? 
+

@@ -6,6 +6,7 @@ struct SidebarView: View {
     @State private var renameText: String = ""
     @State private var showLibrary = false
     @State private var showSettings = false
+    @State private var hoveredVersion = false
 
     var body: some View {
         @Bindable var book = book
@@ -168,11 +169,11 @@ struct SidebarView: View {
                     Image(systemName: "plus").font(.system(size: 13, weight: .bold))
                     Text("New Chapter")
                 }
+                .help("Add a new chapter")
             }
             .buttonStyle(PrimaryPillButtonStyle(color: AppTheme.accentWrite))
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .help("Add a new chapter")
 
             HStack {
                 Button { showSettings = true } label: {
@@ -181,16 +182,20 @@ struct SidebarView: View {
                         .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
+                        .help("Settings")
                 }
                 .buttonStyle(.plain)
-                .help("Settings")
 
                 Spacer()
 
-                Text("Bookworm \(AppTheme.version)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
-                    .padding(.trailing, 10)
+                Text("Bookworm \(AppTheme.version) (Build \(AppTheme.build))")
+                    .font(.system(size: 9, weight: hoveredVersion ? .bold : .medium))
+                    .foregroundStyle(hoveredVersion ? AppTheme.accentWrite : AppTheme.textSecondary.opacity(0.65))
+                    .scaleEffect(hoveredVersion ? 1.25 : 1.0)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: hoveredVersion)
+                    .onHover { hoveredVersion = $0 }
+                    .help("Version \(AppTheme.version) · Build \(AppTheme.build)")
+                    .padding(.trailing, 12)
             }
             .padding(.bottom, 6)
         }
@@ -217,13 +222,15 @@ private struct LibrarySheet: View {
             // Header
             HStack {
                 Text("Library")
-                    .font(AppTheme.editorialFont(18, weight: .semibold))
+                    .font(AppTheme.editorialFont(20, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary)
                 Spacer()
                 Button { isPresented = false } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.5))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .padding(5)
+                        .background(AppTheme.border.opacity(0.5), in: Circle())
                 }
                 .buttonStyle(.plain)
             }
@@ -250,9 +257,9 @@ private struct LibrarySheet: View {
                 .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
-                    VStack(spacing: 4) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 140), spacing: 16)], spacing: 16) {
                         ForEach(recents) { recent in
-                            LibraryRow(recent: recent) {
+                            LibraryCard(recent: recent) {
                                 if let url = recent.url {
                                     book.load(from: url)
                                     isPresented = false
@@ -263,7 +270,7 @@ private struct LibrarySheet: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(20)
                 }
             }
 
@@ -288,69 +295,99 @@ private struct LibrarySheet: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
         }
-        .frame(width: 460, height: 420)
+        .frame(width: 500, height: 440)
         .background(AppTheme.background)
         .onAppear { recents = RecentBooksStore.shared.recents }
     }
 }
 
-private struct LibraryRow: View {
+private struct LibraryCard: View {
     let recent: RecentBook
     let onOpen: () -> Void
     let onRemove: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 22))
-                .foregroundStyle(AppTheme.accentWrite.opacity(0.8))
-                .frame(width: 32)
+        VStack(alignment: .leading, spacing: 0) {
+            // Book cover mockup
+            ZStack(alignment: .topTrailing) {
+                // Gradient backdrop representing book cover
+                LinearGradient(
+                    colors: [
+                        AppTheme.accentWrite.opacity(0.15),
+                        AppTheme.accentWrite.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .frame(height: 120)
 
-            VStack(alignment: .leading, spacing: 2) {
+                // Centered book icon and details representation
+                VStack(spacing: 8) {
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(AppTheme.accentWrite)
+                        .shadow(color: AppTheme.accentWrite.opacity(0.3), radius: 4, y: 2)
+
+                    if !recent.exists {
+                        Text("MISSING")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.red.opacity(0.8), in: Capsule())
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Hover delete button
+                if isHovered {
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .padding(4)
+                            .background(AppTheme.surface.opacity(0.9), in: Circle())
+                            .shadow(color: Color.black.opacity(0.1), radius: 2)
+                            .help("Remove this book from your recents list")
+                    }
+                    .buttonStyle(.plain)
+                    .padding(6)
+                    .transition(.opacity)
+                }
+            }
+            .background(AppTheme.border.opacity(0.1))
+
+            Divider().background(AppTheme.border)
+
+            // Metadata section
+            VStack(alignment: .leading, spacing: 4) {
                 Text(recent.title.isEmpty ? (recent.url?.deletingPathExtension().lastPathComponent ?? "Untitled") : recent.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppTheme.editorialFont(12, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary)
+                    .lineLimit(2)
+                    .frame(height: 32, alignment: .topLeading)
+
+                Text(recent.author.isEmpty ? "Unknown Author" : recent.author)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textSecondary)
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    if !recent.author.isEmpty {
-                        Text(recent.author)
-                            .font(.system(size: 11))
-                            .foregroundStyle(AppTheme.textSecondary)
-                    }
-                    Text(recent.savedDate, style: .relative)
-                        .font(.system(size: 11))
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.7))
-                    if !recent.exists {
-                        Text("Missing")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color.red.opacity(0.7))
-                    }
-                }
+                Text(recent.savedDate, style: .relative)
+                    .font(.system(size: 9))
+                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
             }
-
-            Spacer()
-
-            if isHovered {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(AppTheme.textSecondary)
-                        .padding(5)
-                        .background(AppTheme.border.opacity(0.8), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Remove from library")
-            }
+            .padding(10)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(isHovered ? AppTheme.sidebarHover : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .editorialCard(cornerRadius: 10)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .glowingBorder(color: AppTheme.accentWrite.opacity(0.4), active: isHovered, radius: 6)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
         .contentShape(Rectangle())
         .onTapGesture { if recent.exists { onOpen() } }
         .onHover { isHovered = $0 }
-        .opacity(recent.exists ? 1.0 : 0.5)
+        .opacity(recent.exists ? 1.0 : 0.6)
+        .help("Double-click or press to open \(recent.title)")
     }
 }
 
@@ -430,7 +467,16 @@ private struct SidebarItem: View {
                 if isSelected && isChapter {
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.accentWrite.opacity(0.18))
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        AppTheme.accentWrite.opacity(0.16),
+                                        AppTheme.accentWrite.opacity(0.08)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                         Rectangle()
                             .fill(AppTheme.accentWrite)
                             .frame(width: 3)
@@ -446,6 +492,7 @@ private struct SidebarItem: View {
                         .fill(isSelected ? AppTheme.sidebarSelected : (isHovered ? AppTheme.sidebarHover : Color.clear))
                 }
             }
+            .glowingBorder(color: AppTheme.accentWrite.opacity(0.25), active: isSelected && isChapter, radius: 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -475,9 +522,9 @@ struct SaveButton: View {
                     .font(.system(size: 11, weight: .medium))
                 Text(savedLabel)
             }
+            .help("Save (⌘S)")
         }
         .buttonStyle(GhostToolButtonStyle())
-        .help("Save (⌘S)")
     }
 }
 
@@ -490,9 +537,9 @@ struct IconToolButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13))
+                .help(tip)
         }
         .buttonStyle(GhostToolButtonStyle())
-        .help(tip)
     }
 }
 

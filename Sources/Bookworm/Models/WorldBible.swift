@@ -44,11 +44,19 @@ final class WorldCharacter: Identifiable {
     var personalVoice:        String = ""
     var sensoryAnchors:       String = ""
     var notes:                String = ""
+    var voiceIdentifier:      String = ""
+    var aliases:              String = ""
     var order:                Int
     var kind:                 WorldEntityKind = .character
     var portraitData:         Data? = nil
     var imageRef:             String? = nil
     var stats:                [CharacterStat] = []
+
+    var aliasList: [String] {
+        aliases.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 
     init(id: UUID = UUID(), name: String, order: Int, kind: WorldEntityKind = .character) {
         self.id = id; self.name = name; self.order = order; self.kind = kind

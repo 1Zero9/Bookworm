@@ -20,6 +20,9 @@ final class Book {
     var annotationArchives: [AnnotationArchive] = []
     var imageManifest: [ImageManifestEntry] = []
     var lastSavedAt: Date? = nil
+    var subplots: [Subplot] = []
+    var plotBeats: [PlotBeat] = []
+    var formatMode: BookFormatMode = .novel
 
     @ObservationIgnored private var autoSaveTimer: Timer?
 
@@ -27,6 +30,8 @@ final class Book {
         let first = Chapter(title: "Prologue", order: 0)
         self.chapters = [first]
         self.selectedChapterID = first.id
+        let defaultSubplot = Subplot(name: "Main Plot", colorHex: "#3DBFB8", order: 0)
+        self.subplots = [defaultSubplot]
         ImageManager.shared.ensureMediaDirectoryExists()
         autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
             guard let self, NSApp.isActive, self.fileURL != nil else { return }
@@ -174,17 +179,42 @@ final class Chapter: Identifiable {
     let id: UUID
     var title: String
     var rawText: String = ""
+    var synopsis: String = ""
     var narrationScript: String = ""
     var images: [BookImage] = []
     var order: Int
     var status: ChapterStatus = .draft
+    var versions: [DraftVersion] = []
 
     var annotations: [Annotation] = []
+
+    var tensionScore: Double = 5.0
+    var pacingSummary: String = ""
 
     init(id: UUID = UUID(), title: String, order: Int) {
         self.id = id
         self.title = title
         self.order = order
+    }
+}
+
+// MARK: - Book Format Mode
+enum BookFormatMode: String, Codable, CaseIterable, Identifiable {
+    case novel = "Novel / Manuscript"
+    case email = "Email / Correspondence"
+    case letter = "Vintage Letter"
+    case essay = "Standard Essay"
+    case proposal = "Project Proposal"
+    
+    var id: String { self.rawValue }
+    var icon: String {
+        switch self {
+        case .novel: return "book.closed"
+        case .email: return "envelope"
+        case .letter: return "quill"
+        case .essay: return "doc.text"
+        case .proposal: return "briefcase"
+        }
     }
 }
 

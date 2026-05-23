@@ -16,33 +16,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct BookwormApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var book = Book()
+    @StateObject private var launchStore = LaunchStore.shared
     @State private var recentBooks: [RecentBook] = []
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(book)
-                .onAppear {
-                    recentBooks = RecentBooksStore.shared.recents
-                    if let url = RecentBooksStore.shared.lastURL {
-                        book.load(from: url)
-                    }
+            Group {
+                if launchStore.activeMode == .launcher {
+                    StudioLauncherView()
+                } else {
+                    ContentView()
+                        .environment(launchStore.currentBook)
                 }
-                .onChange(of: book.fileURL) { _, _ in
-                    recentBooks = RecentBooksStore.shared.recents
+            }
+            .onAppear {
+                recentBooks = RecentBooksStore.shared.recents
+                if let url = RecentBooksStore.shared.lastURL {
+                    // Pre-load the book state silently so it is ready, but stay in launcher mode
+                    launchStore.currentBook.load(from: url)
                 }
+            }
+            .onChange(of: launchStore.currentBook.fileURL) { _, _ in
+                recentBooks = RecentBooksStore.shared.recents
+            }
         }
         .defaultSize(width: 1400, height: 900)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Book") { book = Book() }
-                    .keyboardShortcut("n")
+                Button("New Book") {
+                    _ = launchStore.createNewBook(format: .novel)
+                }
+                .keyboardShortcut("n")
             }
 
             CommandGroup(after: .newItem) {
-                Button("Open…") { book.open() }
-                    .keyboardShortcut("o")
+                Button("Open…") {
+                    let panel = NSOpenPanel()
+                    panel.title = "Open Bookworm File"
+                    panel.allowedContentTypes = [.init(filenameExtension: "bookworm")!]
+                    panel.allowsMultipleSelection = false
+                    if panel.runModal() == .OK, let url = panel.url {
+                        launchStore.loadBook(url: url)
+                    }
+                }
+                .keyboardShortcut("o")
 
                 Menu("Open Recent") {
                     if recentBooks.isEmpty {
@@ -52,7 +69,7 @@ struct BookwormApp: App {
                             Button(recent.title.isEmpty
                                    ? (recent.url?.deletingPathExtension().lastPathComponent ?? "Untitled")
                                    : recent.title) {
-                                if let url = recent.url { book.load(from: url) }
+                                if let url = recent.url { launchStore.loadBook(url: url) }
                             }
                             .disabled(!recent.exists)
                         }
@@ -66,10 +83,10 @@ struct BookwormApp: App {
 
                 Divider()
 
-                Button("Save") { book.save() }
+                Button("Save") { launchStore.currentBook.save() }
                     .keyboardShortcut("s")
 
-                Button("Save As…") { book.saveAs() }
+                Button("Save As…") { launchStore.currentBook.saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
             }
         }

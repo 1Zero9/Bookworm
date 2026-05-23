@@ -4,73 +4,196 @@ struct ContentView: View {
     @Environment(Book.self) private var book
     @StateObject private var tts = TTSManager()
     @StateObject private var layout = LayoutStore()
+    @ObservedObject private var launchStore = LaunchStore.shared
     @State private var rightTab: RightTab = .book
     @State private var bookZoom: CGFloat = 1.0
+    @State private var showingMergePopover = false
 
     enum RightTab { case book, narrate, publish }
 
     var body: some View {
-        VStack(spacing: 0) {
-            LayoutBar(layout: layout, rightTab: $rightTab)
-
-            HStack(spacing: 0) {
-                if layout.showSidebar {
-                    SidebarView()
-                        .frame(width: layout.sidebarWidth)
-                    PanelDivider {
-                        layout.sidebarWidth = min(300, max(180, layout.sidebarWidth + $0))
-                    } onEnd: {
-                        layout.persist()
-                    }
-                }
-
-                if layout.showWrite {
-                    if layout.currentPreset == .world {
-                        WorldBibleView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        InputEditorView(
-                            rightTab: $rightTab,
-                            showRight: $layout.showRight,
-                            reviewMode: $layout.reviewMode
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-
-                if layout.showRight {
-                    let fillsAll = !layout.showWrite && !layout.showSidebar
-                    if !fillsAll {
-                        PanelDivider {
-                            layout.rightWidth = max(280, layout.rightWidth - $0)
-                        } onEnd: {
-                            layout.persist()
+        Group {
+            if layout.focusMode {
+                InputEditorView(
+                    layout: layout,
+                    rightTab: $rightTab,
+                    showRight: $layout.showRight,
+                    reviewMode: $layout.reviewMode
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+            } else {
+                VStack(spacing: 0) {
+                    if launchStore.isSandboxActive {
+                        HStack(spacing: 16) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Color(hex: "#D97706"))
+                                
+                                Text("✦ SCRATCH CANVAS")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Color(hex: "#D97706"))
+                                    .tracking(1.0)
+                                
+                                Text("— Drafting freely without pressure. This sandbox is isolated in memory.")
+                                    .font(AppTheme.uiFont(11))
+                                    .foregroundStyle(AppTheme.textSecondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                launchStore.exitToLauncher()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "house")
+                                    Text("Home Screen")
+                                }
+                            }
+                            .buttonStyle(SecondaryPillButtonStyle())
+                            .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                            
+                            Button(role: .destructive, action: {
+                                let alert = NSAlert()
+                                alert.messageText = "Abandon Sandbox Draft?"
+                                alert.informativeText = "Are you sure you want to discard this temporary draft? This action cannot be undone."
+                                alert.addButton(withTitle: "Discard")
+                                alert.addButton(withTitle: "Cancel")
+                                alert.alertStyle = .critical
+                                if alert.runModal() == .alertFirstButtonReturn {
+                                    launchStore.cancelSandbox()
+                                }
+                            }) {
+                                Text("Abandon Draft")
+                                    .foregroundStyle(Color.red)
+                            }
+                            .buttonStyle(SecondaryPillButtonStyle())
+                            .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                            
+                            Button(action: {
+                                showingMergePopover = true
+                            }) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.down.doc.fill")
+                                    Text("Merge into Book")
+                                }
+                            }
+                            .buttonStyle(PrimaryPillButtonStyle())
+                            .fixedSize(horizontal: true, vertical: false)
+                            .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                            .popover(isPresented: $showingMergePopover, arrowEdge: .bottom) {
+                                MergePopoverView(launchStore: launchStore) { chapterID in
+                                    launchStore.mergeScratchProse(to: chapterID)
+                                    showingMergePopover = false
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: 44)
+                        .background(Color(NSColor.dynamic(
+                            light: NSColor(hex: "#FEF3C7"),
+                            dark:  NSColor(hex: "#1E1B15")
+                        )))
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(AppTheme.border).frame(height: 1)
                         }
                     }
-                    rightPanel(fillsAll: fillsAll)
-                }
-            }
-            .frame(maxHeight: .infinity)
 
-            PlaybackBar()
-                .frame(height: 60)
+                    LayoutBar(layout: layout, rightTab: $rightTab)
+
+                    HStack(spacing: 6) {
+                        if layout.showSidebar {
+                            SidebarView()
+                                .frame(width: layout.sidebarWidth)
+                                .glassPanel(cornerRadius: 12)
+                                .padding(.vertical, 6)
+                                .padding(.leading, 6)
+                            
+                            PanelDivider {
+                                layout.sidebarWidth = min(300, max(180, layout.sidebarWidth + $0))
+                            } onEnd: {
+                                layout.persist()
+                            }
+                        }
+
+                        if layout.showWrite {
+                            Group {
+                                switch layout.centerMode {
+                                case .world:
+                                    WorldBibleView()
+                                case .corkboard:
+                                    CorkboardView()
+                                default:
+                                    InputEditorView(
+                                        layout: layout,
+                                        rightTab: $rightTab,
+                                        showRight: $layout.showRight,
+                                        reviewMode: $layout.reviewMode
+                                    )
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .glassPanel(cornerRadius: 12)
+                            .glowingBorder(color: AppTheme.dynamicGlowColor(for: layout.centerMode), active: true, radius: 8)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, layout.showSidebar ? 0 : 6)
+                        }
+
+                        if layout.showRight {
+                            let fillsRest = !layout.showWrite
+                            if !fillsRest {
+                                PanelDivider {
+                                    layout.rightWidth = max(280, layout.rightWidth - $0)
+                                } onEnd: {
+                                    layout.persist()
+                                }
+                            }
+                            rightPanel(fillsRest: fillsRest)
+                                .glassPanel(cornerRadius: 12)
+                                .padding(.vertical, 6)
+                                .padding(.trailing, 6)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+
+                    PlaybackBar()
+                        .frame(height: 60)
+                }
+                .transition(.opacity)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environmentObject(tts)
+        .environmentObject(layout)
         .background(AppTheme.background)
+        .onAppear {
+            if book.formatMode == .email || book.formatMode == .letter {
+                layout.showSidebar = false
+                layout.showRight = false
+            }
+        }
+        .onChange(of: book.formatMode) { _, newMode in
+            if newMode == .email || newMode == newMode { // Trick to satisfy onChange syntax
+                if newMode == .email || newMode == .letter {
+                    layout.showSidebar = false
+                    layout.showRight = false
+                }
+            }
+        }
     }
 
     // MARK: - Right panel
 
     @ViewBuilder
-    private func rightPanel(fillsAll: Bool) -> some View {
+    private func rightPanel(fillsRest: Bool) -> some View {
         VStack(spacing: 0) {
             PanelHeader(
                 step: rightTab == .narrate ? "3" : rightTab == .publish ? "4" : "2",
-                label: rightTab == .narrate ? "NARRATE"
+                label: rightTab == .narrate ? "AUDIOBOOK STUDIO"
                      : rightTab == .publish ? "PUBLISH"
                      : "BOOK VIEW",
-                subtitle: rightTab == .narrate ? "bring your story to life"
+                subtitle: rightTab == .narrate ? "experience your story narrated"
                         : rightTab == .publish ? "export your finished book"
                         : "preview your novel",
                 accent: rightTab == .narrate ? AppTheme.accentNarrate
@@ -85,18 +208,6 @@ struct ContentView: View {
                     if rightTab == .book {
                         zoomControls
                     }
-
-                    if !fillsAll {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) { layout.showRight = false }
-                        } label: {
-                            Image(systemName: "sidebar.right")
-                                .font(.system(size: 13))
-                        }
-                        .buttonStyle(GhostToolButtonStyle())
-                        .help("Hide panel")
-                        .padding(.leading, 4)
-                    }
                 }
             }
 
@@ -104,12 +215,12 @@ struct ContentView: View {
 
             switch rightTab {
             case .book:    BookPreviewView(zoom: bookZoom)
-            case .narrate: NarrationScriptView().background(AppTheme.surface)
+            case .narrate: AudiobookStudioView().background(AppTheme.surface)
             case .publish: PublishView()
             }
         }
-        .frame(maxWidth: fillsAll ? .infinity : layout.rightWidth)
-        .frame(minWidth: fillsAll ? 0 : 280)
+        .frame(maxWidth: fillsRest ? .infinity : layout.rightWidth)
+        .frame(minWidth: fillsRest ? 0 : 280)
         .frame(maxHeight: .infinity)
     }
 
@@ -120,18 +231,28 @@ struct ContentView: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(AppTheme.textSecondary)
                     .frame(width: 16, height: 16)
+                    .help("Zoom out")
             }
-            .buttonStyle(.plain).help("Zoom out")
+            .buttonStyle(.plain)
 
-            Slider(value: $bookZoom, in: 0.5...2.0).frame(width: 72)
+            TactileSlider(
+                value: Binding(
+                    get: { Double(bookZoom) },
+                    set: { bookZoom = CGFloat($0) }
+                ),
+                range: 0.5...2.0,
+                accentColor: AppTheme.accentWrite
+            )
+            .frame(width: 72)
 
             Button { bookZoom = min(2.0, (bookZoom * 4 + 1).rounded() / 4) } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(AppTheme.textSecondary)
                     .frame(width: 16, height: 16)
+                    .help("Zoom in")
             }
-            .buttonStyle(.plain).help("Zoom in")
+            .buttonStyle(.plain)
 
             Text("\(Int((bookZoom * 100).rounded()))%")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -142,49 +263,80 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Layout preset bar
+// MARK: - Simplified togglable layout bar
 
 private struct LayoutBar: View {
     @ObservedObject var layout: LayoutStore
     @Binding var rightTab: ContentView.RightTab
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(LayoutPreset.allCases, id: \.self) { preset in
-                Button { activate(preset) } label: {
+        HStack(spacing: 12) {
+            // Group 1: Left Side Panel Toggle
+            HStack(spacing: 4) {
+                Button {
+                    layout.toggleSidebar()
+                } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: preset.icon)
-                            .font(.system(size: 10, weight: .medium))
-                        Text(preset.rawValue)
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Sidebar")
                     }
+                    .help("Toggle left chapters and library sidebar")
                 }
-                .buttonStyle(NavPillButtonStyle(isActive: layout.currentPreset == preset,
-                                               accent: preset.accent))
-                .help(helpText(preset))
+                .buttonStyle(NavPillButtonStyle(isActive: layout.showSidebar, accent: AppTheme.success))
             }
+
+            Divider()
+                .frame(height: 16)
+                .background(AppTheme.border)
+
+            // Group 2: Mutually Exclusive Center Modes
+            HStack(spacing: 4) {
+                ForEach(CenterMode.allCases, id: \.self) { mode in
+                    Button {
+                        layout.toggleCenterMode(mode)
+                        if mode == .review {
+                            rightTab = .book
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: mode.icon)
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(mode.rawValue)
+                        }
+                        .help(mode.helpText)
+                    }
+                    .buttonStyle(NavPillButtonStyle(isActive: layout.showWrite && layout.centerMode == mode, accent: AppTheme.success))
+                }
+            }
+
+            Divider()
+                .frame(height: 16)
+                .background(AppTheme.border)
+
+            // Group 3: Right Side Panel Toggle
+            HStack(spacing: 4) {
+                Button {
+                    layout.toggleRightPanel()
+                    if layout.showRight { rightTab = .book }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Book Preview")
+                    }
+                    .help("Toggle right book rendering, narration script & PDF publishing preview panel")
+                }
+                .buttonStyle(NavPillButtonStyle(isActive: layout.showRight, accent: AppTheme.success))
+            }
+
             Spacer()
         }
         .padding(.horizontal, 12)
-        .frame(height: 34)
+        .frame(height: 36)
         .background(AppTheme.sidebar)
         .overlay(alignment: .bottom) {
             Rectangle().fill(AppTheme.border).frame(height: 1)
-        }
-    }
-
-    private func activate(_ preset: LayoutPreset) {
-        layout.apply(preset)
-        if preset == .book || preset == .writeBook { rightTab = .book }
-    }
-
-    private func helpText(_ p: LayoutPreset) -> String {
-        switch p {
-        case .organise:  return "Sidebar focus — chapters list expanded"
-        case .write:     return "Write only — no preview panel"
-        case .writeBook: return "Write + Book preview side by side"
-        case .redpen:    return "Red pen review mode"
-        case .book:      return "Book preview at full width"
-        case .world:     return "World Bible — genre, rules & character vault"
         }
     }
 }
@@ -269,8 +421,74 @@ private struct PanelTab: View {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 10, weight: .medium))
                 Text(label)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .buttonStyle(NavPillButtonStyle(isActive: isActive, accent: accent))
+    }
+}
+
+// MARK: - Merge Popover View
+
+struct MergePopoverView: View {
+    let launchStore: LaunchStore
+    let onSelect: (UUID) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("MERGE INTO CHAPTER")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(AppTheme.textSecondary)
+                .tracking(1.0)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+            
+            Divider().background(AppTheme.border)
+            
+            ScrollView {
+                VStack(spacing: 4) {
+                    if let chapters = launchStore.primaryBookBackup?.chapters, !chapters.isEmpty {
+                        ForEach(chapters) { chapter in
+                            Button {
+                                onSelect(chapter.id)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(AppTheme.accentWrite)
+                                    Text(chapter.title)
+                                        .font(AppTheme.uiFont(11.5))
+                                        .foregroundStyle(AppTheme.textPrimary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(AppTheme.textSecondary)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(AppTheme.surface)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { hovering in
+                                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                            }
+                        }
+                    } else {
+                        Text("No chapters found in primary book.")
+                            .font(AppTheme.uiFont(11))
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .padding(20)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+            }
+        }
+        .frame(width: 250, height: 200)
+        .background(AppTheme.background)
     }
 }

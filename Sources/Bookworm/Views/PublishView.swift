@@ -35,7 +35,7 @@ struct PublishView: View {
                     summaryRow(label: "Words",    value: "\(totalWords) words")
                 }
                 .padding(16)
-                .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .editorialCard(cornerRadius: 12)
                 .padding(.horizontal, 32)
 
                 // Export options
@@ -71,21 +71,23 @@ struct PublishView: View {
                     .disabled(imgCount == 0).opacity(imgCount == 0 ? 0.4 : 1)
                 }
                 .padding(16)
-                .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .editorialCard(cornerRadius: 12)
                 .padding(.horizontal, 32)
 
                 Button { exportPDF() } label: {
                     HStack(spacing: 10) {
-                        if isExporting { ProgressView().scaleEffect(0.8) }
-                        else { Image(systemName: exported ? "checkmark.circle.fill" : "square.and.arrow.up") }
+                        if isExporting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: exported ? "checkmark.circle.fill" : "square.and.arrow.up")
+                        }
                         Text(exported ? "Exported!" : "Export as PDF")
-                            .font(.system(size: 15, weight: .semibold))
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 28).padding(.vertical, 12)
-                    .background(AppTheme.accentPublish, in: RoundedRectangle(cornerRadius: 12))
+                    .help("Compile and save your entire book manuscript as a beautifully formatted PDF document")
                 }
-                .buttonStyle(.plain).disabled(isExporting)
+                .buttonStyle(PrimaryPillButtonStyle(color: AppTheme.accentPublish, fontSize: 13))
+                .disabled(isExporting)
+                .padding(.horizontal, 32)
 
                 Text("PDF opens in Preview — you can print, share, or save from there.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary)

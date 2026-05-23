@@ -115,24 +115,11 @@ struct EditReviewView: View {
     @ViewBuilder
     private var reviewHeader: some View {
         HStack(spacing: 10) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { editMode = false }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                    Text("Write").font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundStyle(Self.accent)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Self.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .help("Back to Write mode")
-
             Text("RED PEN")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(AppTheme.textPrimary)
                 .tracking(1.0)
+                .padding(.leading, 4)
 
             Text("·").foregroundStyle(AppTheme.textSecondary)
 
@@ -155,11 +142,11 @@ struct EditReviewView: View {
                     }
                     .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(AppTheme.accentWorld, in: RoundedRectangle(cornerRadius: 7))
+                    .help("Ask Gemini to flag clichés, wiki-voice & emotional gaps")
                 }
                 .buttonStyle(.plain)
                 .disabled(isAuditing || chapter.rawText.isEmpty)
                 .opacity((isAuditing || chapter.rawText.isEmpty) ? 0.55 : 1)
-                .help("Ask Gemini to flag clichés, wiki-voice & emotional gaps")
             }
 
             Button {
@@ -175,10 +162,10 @@ struct EditReviewView: View {
                 .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
                 .background(selectedRange != nil ? Self.accent : Self.accent.opacity(0.35),
                             in: RoundedRectangle(cornerRadius: 7))
+                .help("Select text first, then add a note")
             }
             .buttonStyle(.plain)
             .disabled(selectedRange == nil)
-            .help("Select text first, then add a note")
 
             let totalAnnotations = book.chapters.reduce(0) { $0 + $1.annotations.count }
 
@@ -190,11 +177,11 @@ struct EditReviewView: View {
                     }
                     .foregroundStyle(AppTheme.textSecondary).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(AppTheme.border.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
+                    .help("Export annotated text as Markdown")
                 }
                 .buttonStyle(.plain)
                 .disabled(chapter.annotations.isEmpty)
                 .opacity(chapter.annotations.isEmpty ? 0.4 : 1)
-                .help("Export annotated text as Markdown")
             }
 
             Button { importMarkdown() } label: {
@@ -204,9 +191,9 @@ struct EditReviewView: View {
                 }
                 .foregroundStyle(AppTheme.textSecondary).padding(.horizontal, 10).padding(.vertical, 5)
                 .background(AppTheme.border.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
+                .help("Re-import annotations from an exported Markdown file")
             }
             .buttonStyle(.plain)
-            .help("Re-import annotations from an exported Markdown file")
 
             if totalAnnotations > 0 {
                 Button { showArchiveSheet = true } label: {
@@ -217,9 +204,9 @@ struct EditReviewView: View {
                     .foregroundStyle(AppTheme.accentNarrate)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(AppTheme.accentNarrate.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                    .help("Snapshot all notes before rewriting — they won't be lost")
                 }
                 .buttonStyle(.plain)
-                .help("Snapshot all notes before rewriting — they won't be lost")
             }
 
             if !book.annotationArchives.isEmpty {
@@ -227,9 +214,9 @@ struct EditReviewView: View {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 12))
                         .foregroundStyle(AppTheme.textSecondary).padding(6)
                         .background(AppTheme.border.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                        .help("View archived notes from previous drafts")
                 }
                 .buttonStyle(.plain)
-                .help("View archived notes from previous drafts")
             }
         }
         .padding(.horizontal, 14)
@@ -673,6 +660,7 @@ private struct SelectionActionBar: View {
                     Text("Comment").font(.system(size: 12, weight: .medium))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
+                .help("Add a review comment or annotation to the selected text")
             }
             .buttonStyle(.plain)
 
@@ -684,6 +672,7 @@ private struct SelectionActionBar: View {
                     Text("Like").font(.system(size: 12, weight: .medium))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
+                .help("Mark the selected text with a thumbs-up recommendation")
             }
             .buttonStyle(.plain)
         }
@@ -796,9 +785,9 @@ private struct AnnotationRow: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(AppTheme.textSecondary)
+                                .help("Remove this note")
                         }
                         .buttonStyle(.plain)
-                        .help("Remove this note")
                     }
                 }
                 if !snippet.isEmpty {
@@ -1129,9 +1118,9 @@ private struct ViewArchivesSheet: View {
                                         Image(systemName: "trash").font(.system(size: 10))
                                             .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
                                             .padding(4)
+                                            .help("Delete this archive group")
                                     }
                                     .buttonStyle(.plain)
-                                    .help("Delete this archive group")
                                 }
                                 .padding(.horizontal, 20).padding(.vertical, 10)
                                 .background(AppTheme.sidebar)

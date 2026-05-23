@@ -3,10 +3,12 @@ import AppKit
 
 struct InputEditorView: View {
     @Environment(Book.self) private var book
+    @ObservedObject var layout: LayoutStore
     @Binding var rightTab: ContentView.RightTab
     @Binding var showRight: Bool
     @Binding var reviewMode: Bool
     @AppStorage("bw.readingMode") private var readingMode = true
+    @State private var showSplitDraft = false
 
     // The chapter currently in the viewport (scroll-driven) or explicitly selected.
     private var activeChapter: Chapter? {
@@ -18,7 +20,17 @@ struct InputEditorView: View {
         if reviewMode {
             EditReviewView(editMode: $reviewMode)
         } else {
-            writeView
+            if layout.focusMode {
+                ZStack(alignment: .topTrailing) {
+                    ContinuousWriteView()
+                        .background(AppTheme.background)
+
+                    FocusModeExitButton(layout: layout)
+                        .padding(24)
+                }
+            } else {
+                writeView
+            }
         }
     }
 
@@ -32,83 +44,52 @@ struct InputEditorView: View {
                 accent: AppTheme.accentWrite
             ) {
                 HStack(spacing: 8) {
-                    if !showRight {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) { showRight = true }
-                        } label: {
-                            Image(systemName: "sidebar.right")
-                                .font(.system(size: 13))
-                                .foregroundStyle(AppTheme.accentWrite)
-                                .padding(6)
-                                .background(AppTheme.accentWrite.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Show book preview panel")
-                    }
-
                     Button { readingMode.toggle() } label: {
                         Image(systemName: "text.aligncenter")
-                            .font(.system(size: 13))
-                            .foregroundStyle(readingMode ? AppTheme.accentWrite : AppTheme.textSecondary)
-                            .padding(7)
-                            .background(
-                                readingMode ? AppTheme.accentWrite.opacity(0.12) : AppTheme.border.opacity(0.6),
-                                in: RoundedRectangle(cornerRadius: 7)
-                            )
+                            .help(readingMode ? "Switch to full-width layout" : "Switch to reading-width column")
                     }
-                    .buttonStyle(.plain)
-                    .help(readingMode ? "Switch to full-width layout" : "Switch to reading-width column")
+                    .buttonStyle(NavPillButtonStyle(isActive: readingMode, accent: AppTheme.accentWrite))
+
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                            layout.focusMode = true
+                        }
+                    } label: {
+                        Image(systemName: "eye.slash")
+                            .help("Enter Zen Focus Mode")
+                    }
+                    .buttonStyle(GhostToolButtonStyle())
+
+                    Button {
+                        layout.rhythmMode.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "music.note.list")
+                            Text("Rhythm")
+                        }
+                        .help("Toggle Prose Rhythm & Sentence Cadence Visualizer")
+                    }
+                    .buttonStyle(NavPillButtonStyle(isActive: layout.rhythmMode, accent: AppTheme.accentWrite))
 
                     if activeChapter != nil {
                         Button { insertImage() } label: {
                             Image(systemName: "photo.badge.plus")
-                                .font(.system(size: 13))
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .padding(7)
-                                .background(AppTheme.border.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
+                                .help("Insert image into current chapter")
                         }
-                        .buttonStyle(.plain)
-                        .help("Insert image into current chapter")
+                        .buttonStyle(GhostToolButtonStyle())
 
                         Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { reviewMode = true }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "pencil.line")
-                                    .font(.system(size: 12))
-                                Text("Red Pen")
-                                    .font(.system(size: 12, weight: .semibold))
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                showSplitDraft.toggle()
                             }
-                            .foregroundStyle(Color(NSColor.systemOrange))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color(NSColor.systemOrange).opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Switch to review/annotation mode")
-
-                        let textEmpty = activeChapter?.rawText
-                            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-                        Button {
-                            guard let ch = activeChapter else { return }
-                            ch.narrationScript = ScriptConverter.convert(ch.rawText)
-                            rightTab = .narrate
                         } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.system(size: 12))
-                                Text("Convert to Script")
-                                    .font(.system(size: 12, weight: .semibold))
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.split.2x1")
+                                Text("Split Draft")
                             }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AppTheme.accentWrite, in: RoundedRectangle(cornerRadius: 8))
+                            .help("Open side-by-side draft checkpoints and AI rewrite split panel")
                         }
-                        .buttonStyle(.plain)
-                        .disabled(textEmpty)
-                        .opacity(textEmpty ? 0.4 : 1)
+                        .buttonStyle(NavPillButtonStyle(isActive: showSplitDraft, accent: AppTheme.accentWrite))
                     }
                 }
             }
@@ -117,8 +98,18 @@ struct InputEditorView: View {
 
             // Show continuous write view when chapters exist, cover editor otherwise.
             if book.selectedChapterID != nil || !book.chapters.isEmpty {
-                ContinuousWriteView()
-                    .background(AppTheme.surface)
+                HStack(spacing: 0) {
+                    ContinuousWriteView()
+                        .frame(maxWidth: .infinity)
+                    
+                    if showSplitDraft, let active = activeChapter {
+                        Divider().background(AppTheme.border)
+                        SplitDraftView(chapter: active, isPresented: $showSplitDraft)
+                            .frame(width: 440)
+                            .transition(.move(edge: .trailing))
+                    }
+                }
+                .background(AppTheme.surface)
             } else {
                 CoverEditorView()
                     .background(AppTheme.surface)
@@ -135,6 +126,38 @@ struct InputEditorView: View {
               let url = panel.url,
               let img = NSImage(contentsOf: url) else { return }
         chapter.images.append(BookImage(nsImage: img))
+    }
+}
+
+// MARK: - Focus Mode Exit Button Overlay
+
+private struct FocusModeExitButton: View {
+    @ObservedObject var layout: LayoutStore
+    @State private var hovered = false
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                layout.focusMode = false
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 11))
+                Text("Exit Focus")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundStyle(hovered ? AppTheme.textPrimary : AppTheme.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(AppTheme.surface.opacity(hovered ? 0.95 : 0.65), in: Capsule())
+            .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1))
+            .shadow(color: Color.black.opacity(hovered ? 0.15 : 0.04), radius: hovered ? 8 : 3, y: 1)
+            .help("Exit Zen Focus Mode and restore navigation layouts")
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .animation(.easeInOut(duration: 0.15), value: hovered)
     }
 }
 

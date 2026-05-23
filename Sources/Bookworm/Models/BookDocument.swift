@@ -5,7 +5,7 @@ import CoreGraphics
 // MARK: - File format
 
 struct BookFile: Codable {
-    var version: Int = 2
+    var version: Int = 3
     var title: String
     var author: String
     var chapters: [ChapterFile]
@@ -21,6 +21,10 @@ struct BookFile: Codable {
     var annotationArchives: [AnnotationArchive]?
     // v5: Image manifest for external media references
     var imageManifest: [ImageManifestEntry]?
+    // v6: Plot timeline & subplots
+    var subplots: [SubplotFile]?
+    var plotBeats: [PlotBeatFile]?
+    var formatMode: String?
 }
 
 struct RelationshipFile: Codable {
@@ -63,16 +67,22 @@ struct WorldCharacterFile: Codable {
     var portraitData:         Data?
     var imageRef:             String?
     var stats:                [CharacterStat]? // nil in files saved before v2.2
+    var voiceIdentifier:      String?
+    var aliases:              String?
 }
 
 struct ChapterFile: Codable {
     var id: UUID
     var title: String
     var rawText: String
+    var synopsis: String?
     var narrationScript: String
     var order: Int
     var images: [ImageFile]
     var status: String?
+    var versions: [DraftVersion]?
+    var tensionScore: Double?
+    var pacingSummary: String?
 }
 
 struct ImageFile: Codable {
@@ -87,6 +97,7 @@ struct ImageFile: Codable {
 extension Book {
     func toFile() -> BookFile {
         BookFile(
+            version: 3,
             title: title,
             author: author,
             chapters: chapters.map { $0.toFile() },
@@ -105,7 +116,10 @@ extension Book {
             },
             worldMapPositions: worldMapPositions.map { MapPositionEntry(characterID: $0.key, x: $0.value.x, y: $0.value.y) },
             annotationArchives: annotationArchives.isEmpty ? nil : annotationArchives,
-            imageManifest: imageManifest.isEmpty ? nil : imageManifest
+            imageManifest: imageManifest.isEmpty ? nil : imageManifest,
+            subplots: subplots.isEmpty ? nil : subplots.map { $0.toFile() },
+            plotBeats: plotBeats.isEmpty ? nil : plotBeats.map { $0.toFile() },
+            formatMode: formatMode.rawValue
         )
     }
 
@@ -128,6 +142,14 @@ extension Book {
         annotationArchives = file.annotationArchives ?? []
         imageManifest = file.imageManifest ?? []
         ImageManager.shared.loadManifest(imageManifest)
+        
+        subplots = file.subplots?.map { Subplot(from: $0) } ?? [Subplot(name: "Main Plot", colorHex: "#3DBFB8", order: 0)]
+        plotBeats = file.plotBeats?.map { PlotBeat(from: $0) } ?? []
+        if let fmRaw = file.formatMode, let fm = BookFormatMode(rawValue: fmRaw) {
+            formatMode = fm
+        } else {
+            formatMode = .novel
+        }
     }
 }
 
@@ -154,7 +176,9 @@ extension WorldCharacter {
                            kind: kind.rawValue,
                            portraitData: portraitData,
                            imageRef: imageRef,
-                           stats: stats.isEmpty ? nil : stats)
+                           stats: stats.isEmpty ? nil : stats,
+                           voiceIdentifier: voiceIdentifier.isEmpty ? nil : voiceIdentifier,
+                           aliases: aliases.isEmpty ? nil : aliases)
     }
     convenience init(from f: WorldCharacterFile) {
         let k = WorldEntityKind(rawValue: f.kind ?? "Character") ?? .character
@@ -168,6 +192,8 @@ extension WorldCharacter {
         portraitData         = f.portraitData
         imageRef             = f.imageRef
         stats                = f.stats ?? []
+        voiceIdentifier      = f.voiceIdentifier ?? ""
+        aliases              = f.aliases ?? ""
     }
 }
 
@@ -177,19 +203,27 @@ extension Chapter {
             id: id,
             title: title,
             rawText: rawText,
+            synopsis: synopsis.isEmpty ? nil : synopsis,
             narrationScript: narrationScript,
             order: order,
             images: images.map { $0.toFile() },
-            status: status.rawValue
+            status: status.rawValue,
+            versions: versions.isEmpty ? nil : versions,
+            tensionScore: tensionScore,
+            pacingSummary: pacingSummary.isEmpty ? nil : pacingSummary
         )
     }
 
     convenience init(from file: ChapterFile) {
         self.init(id: file.id, title: file.title, order: file.order)
         rawText = file.rawText
+        synopsis = file.synopsis ?? ""
         narrationScript = file.narrationScript
         images = file.images.compactMap { BookImage(from: $0) }
         if let s = file.status { status = ChapterStatus(rawValue: s) ?? .draft }
+        versions = file.versions ?? []
+        tensionScore = file.tensionScore ?? 5.0
+        pacingSummary = file.pacingSummary ?? ""
     }
 }
 

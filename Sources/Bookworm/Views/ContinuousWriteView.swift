@@ -1,10 +1,12 @@
 import SwiftUI
 import AppKit
+import NaturalLanguage
 
 // MARK: - Continuous multi-chapter write view
 
 struct ContinuousWriteView: View {
     @Environment(Book.self) private var book
+    @EnvironmentObject private var layout: LayoutStore
     @AppStorage("bw.readingMode") private var readingMode = true
     @State private var heights:    [UUID: CGFloat] = [:]
     @State private var chapterTops: [UUID: CGFloat] = [:]
@@ -66,10 +68,59 @@ struct ContinuousWriteView: View {
     @ViewBuilder
     private func chapterBlock(chapter: Chapter, idx: Int, width: CGFloat) -> some View {
         @Bindable var chapter = chapter
-        let colWidth: CGFloat = readingMode ? min(width, 740) : width
+        let isEmail = book.formatMode == .email
+        let isLetter = book.formatMode == .letter
+        let colWidth: CGFloat = readingMode 
+            ? (isLetter ? min(width, 640) : min(width, 740)) 
+            : width
+        
         VStack(spacing: 0) {
-            // ── chapter divider ──
-            chapterDivider(title: chapter.title, emoji: AppTheme.emoji(for: idx))
+            if isEmail {
+                // Email Header Card
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Text("To:")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .frame(width: 60, alignment: .leading)
+                        
+                        Text("draft-outbox@bookworm.app")
+                            .font(AppTheme.uiFont(13))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        
+                        Spacer()
+                    }
+                    .padding(.bottom, 8)
+                    
+                    Divider().background(AppTheme.border)
+                    
+                    HStack(spacing: 12) {
+                        Text("Subject:")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .frame(width: 60, alignment: .leading)
+                        
+                        TextField("Email Subject", text: $chapter.title)
+                            .textFieldStyle(.plain)
+                            .font(AppTheme.uiFont(13))
+                            .foregroundStyle(AppTheme.textPrimary)
+                    }
+                }
+                .padding(16)
+                .background(AppTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(AppTheme.border, lineWidth: 1)
+                )
+                .padding(.horizontal, 48)
+                .padding(.top, 32)
+                .frame(width: colWidth)
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                // ── chapter divider ──
+                chapterDivider(title: chapter.title, emoji: AppTheme.emoji(for: idx))
+            }
 
             // ── auto-sizing text editor ──
             AutoSizingTextEditor(
@@ -78,22 +129,23 @@ struct ContinuousWriteView: View {
                 measuredHeight: Binding(
                     get: { heights[chapter.id] ?? 400 },
                     set: { heights[chapter.id] = $0 }
-                )
+                ),
+                focusMode: layout.focusMode,
+                rhythmMode: layout.rhythmMode,
+                formatMode: book.formatMode
             )
             .frame(width: colWidth)
             .frame(height: max(200, heights[chapter.id] ?? 400))
-            .shadow(color: readingMode ? .black.opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
+            .shadow(color: readingMode ? .black.opacity(0.04) : .clear, radius: 8, x: 0, y: 3)
             .frame(maxWidth: .infinity, alignment: .center)
 
             // ── image strip (if any) ──
-            if !chapter.images.isEmpty {
-                Divider().background(AppTheme.border)
+            if !isEmail && !chapter.images.isEmpty {
                 ChapterImageStrip(chapter: chapter)
-                    .background(AppTheme.background)
             }
 
             // ── chapter break gap ──
-            Color.clear.frame(height: 56)
+            Color.clear.frame(height: 48)
         }
         .id(chapter.id)
         .background(
@@ -108,21 +160,24 @@ struct ContinuousWriteView: View {
 
     @ViewBuilder
     private func chapterDivider(title: String, emoji: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Rectangle().fill(AppTheme.border).frame(height: 1)
-            HStack(spacing: 6) {
-                Text(emoji).font(.system(size: 12))
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AppTheme.textSecondary)
+            HStack(spacing: 8) {
+                Text(emoji)
+                    .font(.system(size: 14))
+                    .foregroundStyle(AppTheme.accentWrite)
+                Text(title.uppercased())
+                    .font(AppTheme.editorialFont(13, weight: .bold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .tracking(2.0)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
             Rectangle().fill(AppTheme.border).frame(height: 1)
         }
         .padding(.horizontal, 48)
-        .padding(.top, 28)
-        .padding(.bottom, 20)
+        .padding(.top, 40)
+        .padding(.bottom, 24)
         .background(AppTheme.background)
     }
 
@@ -151,9 +206,12 @@ struct AutoSizingTextEditor: NSViewRepresentable {
     @Binding var text: String
     var availableWidth: CGFloat
     @Binding var measuredHeight: CGFloat
+    var focusMode: Bool
+    var rhythmMode: Bool
+    var formatMode: BookFormatMode
 
     private static let placeholder =
-        "Write your scene here — prose, dialogue, descriptions.\n\nWhen you're ready, tap Convert to Script above."
+        "Write your scene here — prose, dialogue, descriptions.\n\nPress Play below to listen to your prose narrated in high-fidelity."
 
     func makeNSView(context: Context) -> AutoTextView {
         let tv = AutoTextView()
@@ -163,14 +221,59 @@ struct AutoSizingTextEditor: NSViewRepresentable {
         tv.isEditable = true
         tv.isSelectable = true
         tv.allowsUndo = true
-        tv.font = NSFont(name: "Georgia", size: 16) ?? .systemFont(ofSize: 16)
-        tv.backgroundColor = .textBackgroundColor
+        
+        let fontSize: CGFloat = (formatMode == .letter) ? 18 : 16
+        tv.font = AppTheme.editorialNSFont(fontSize)
+        
+        let paragraphStyle = NSMutableParagraphStyle()
+        if formatMode == .letter {
+            paragraphStyle.lineSpacing = 10
+            paragraphStyle.paragraphSpacing = 18
+        } else {
+            paragraphStyle.lineSpacing = 4
+            paragraphStyle.paragraphSpacing = 8
+        }
+        tv.defaultParagraphStyle = paragraphStyle
+        
+        let bg: NSColor
+        if formatMode == .letter {
+            bg = NSColor.dynamic(
+                light: NSColor(hex: "#FAF6EE"),
+                dark:  NSColor(hex: "#1A1510")
+            )
+        } else {
+            let standardBg = NSColor.dynamic(
+                light: NSColor(hex: "#F7F6F3"),
+                dark:  NSColor(hex: "#121826")
+            )
+            bg = focusMode ? standardBg : .textBackgroundColor
+        }
+        tv.backgroundColor = bg
+        
+        let textColor: NSColor
+        if formatMode == .letter {
+            textColor = NSColor.dynamic(
+                light: NSColor(hex: "#2E2214"),
+                dark:  NSColor(hex: "#F6EADA")
+            )
+        } else {
+            textColor = focusMode
+                ? NSColor.dynamic(light: NSColor(hex: "#1F2937"), dark: NSColor(hex: "#F3F4F6"))
+                : .textColor
+        }
+        tv.textColor = textColor
+        tv.insertionPointColor = textColor
+
         tv.drawsBackground = true
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.textContainer?.widthTracksTextView = true
         tv.textContainer?.lineFragmentPadding = 5
-        tv.textContainerInset = NSSize(width: 40, height: 20)
+        
+        let padX: CGFloat = (formatMode == .letter) ? 56 : (focusMode ? 48 : 40)
+        let padY: CGFloat = (formatMode == .letter) ? 36 : (focusMode ? 28 : 20)
+        tv.textContainerInset = NSSize(width: padX, height: padY)
+        
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.frame = NSRect(x: 0, y: 0, width: max(1, availableWidth), height: 400)
@@ -182,7 +285,10 @@ struct AutoSizingTextEditor: NSViewRepresentable {
             applyPlaceholder(tv)
         } else {
             tv.string = text
-            tv.textColor = .textColor
+            tv.textColor = textColor
+            if rhythmMode {
+                context.coordinator.applyRhythmHighlights(tv)
+            }
         }
         // Schedule initial height measurement after first layout pass.
         // (recomputeHeight is only triggered by textDidChange normally,
@@ -201,25 +307,82 @@ struct AutoSizingTextEditor: NSViewRepresentable {
             tv.recomputeHeight()
         }
 
+        let bg: NSColor
+        if formatMode == .letter {
+            bg = NSColor.dynamic(
+                light: NSColor(hex: "#FAF6EE"),
+                dark:  NSColor(hex: "#1A1510")
+            )
+        } else {
+            let standardBg = NSColor.dynamic(
+                light: NSColor(hex: "#F7F6F3"),
+                dark:  NSColor(hex: "#121826")
+            )
+            bg = focusMode ? standardBg : .textBackgroundColor
+        }
+        tv.backgroundColor = bg
+        
+        let textColor: NSColor
+        if formatMode == .letter {
+            textColor = NSColor.dynamic(
+                light: NSColor(hex: "#2E2214"),
+                dark:  NSColor(hex: "#F6EADA")
+            )
+        } else {
+            textColor = focusMode
+                ? NSColor.dynamic(light: NSColor(hex: "#1F2937"), dark: NSColor(hex: "#F3F4F6"))
+                : .textColor
+        }
+        tv.textColor = textColor
+        tv.insertionPointColor = textColor
+        
+        let padX: CGFloat = (formatMode == .letter) ? 56 : (focusMode ? 48 : 40)
+        let padY: CGFloat = (formatMode == .letter) ? 36 : (focusMode ? 28 : 20)
+        tv.textContainerInset = NSSize(width: padX, height: padY)
+
+        let fontSize: CGFloat = (formatMode == .letter) ? 18 : 16
+        let font = AppTheme.editorialNSFont(fontSize)
+
+        // Handle Rhythm Mode changes
+        let modeChanged = context.coordinator.lastRhythmMode != rhythmMode
+        context.coordinator.lastRhythmMode = rhythmMode
+        
+        if rhythmMode {
+            if modeChanged || !context.coordinator.isEditing {
+                context.coordinator.applyRhythmHighlights(tv)
+            }
+        } else {
+            if modeChanged {
+                context.coordinator.clearRhythmHighlights(tv)
+            }
+        }
+
         guard !context.coordinator.isEditing else { return }
         if text.isEmpty && tv.textColor == .textColor {
             applyPlaceholder(tv)
+            if rhythmMode {
+                context.coordinator.clearRhythmHighlights(tv)
+            }
         } else if !text.isEmpty && tv.string != text {
-            tv.textColor = .textColor
-            tv.font = NSFont(name: "Georgia", size: 16) ?? .systemFont(ofSize: 16)
+            tv.textColor = textColor
+            tv.font = font
             tv.string = text
             tv.recomputeHeight()
+            if rhythmMode {
+                context.coordinator.applyRhythmHighlights(tv)
+            }
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     private func applyPlaceholder(_ tv: NSTextView) {
+        let fontSize: CGFloat = (formatMode == .letter) ? 18 : 16
         tv.textStorage?.setAttributedString(NSAttributedString(
             string: Self.placeholder,
             attributes: [
                 .foregroundColor: NSColor.placeholderTextColor,
-                .font: NSFont(name: "Georgia", size: 16) ?? NSFont.systemFont(ofSize: 16)
+                .font: AppTheme.editorialNSFont(fontSize)
             ]
         ))
     }
@@ -228,6 +391,7 @@ struct AutoSizingTextEditor: NSViewRepresentable {
         var parent: AutoSizingTextEditor
         weak var textView: AutoTextView?
         var isEditing = false
+        var lastRhythmMode: Bool? = nil
 
         init(_ parent: AutoSizingTextEditor) { self.parent = parent }
 
@@ -236,18 +400,118 @@ struct AutoSizingTextEditor: NSViewRepresentable {
             isEditing = true
             if tv.textColor == .placeholderTextColor {
                 tv.string = ""
-                tv.textColor = .textColor
-                tv.font = NSFont(name: "Georgia", size: 16) ?? .systemFont(ofSize: 16)
+                
+                let textColor: NSColor
+                if parent.formatMode == .letter {
+                    textColor = NSColor.dynamic(
+                        light: NSColor(hex: "#2E2214"),
+                        dark:  NSColor(hex: "#F6EADA")
+                    )
+                } else {
+                    textColor = .textColor
+                }
+                tv.textColor = textColor
+                let fontSize: CGFloat = (parent.formatMode == .letter) ? 18 : 16
+                tv.font = AppTheme.editorialNSFont(fontSize)
             }
         }
 
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? AutoTextView else { return }
-            parent.text = tv.string
+            let oldText = parent.text
+            let newText = tv.string
+            parent.text = newText
             tv.recomputeHeight()
+
+            if parent.rhythmMode {
+                applyRhythmHighlights(tv)
+            }
+
+            if parent.focusMode {
+                if newText.count > oldText.count {
+                    let lastChar = newText.last
+                    if lastChar == "\n" {
+                        TypewriterAudioEngine.shared.playChime()
+                    } else {
+                        TypewriterAudioEngine.shared.playClick()
+                    }
+                }
+                
+                // Centered midpoint scroll-locking locking!
+                // Make sure cursor stays visible in center of view
+                tv.scrollRangeToVisible(tv.selectedRange())
+            }
         }
 
         func textDidEndEditing(_ notification: Notification) { isEditing = false }
+
+        // MARK: - Rhythm Highlights Engine
+        
+        func applyRhythmHighlights(_ tv: NSTextView) {
+            guard let storage = tv.textStorage else { return }
+            let savedTypingAttributes = tv.typingAttributes
+            
+            storage.beginEditing()
+            
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            
+            let text = storage.string
+            guard !text.isEmpty && text != AutoSizingTextEditor.placeholder else {
+                storage.endEditing()
+                var cleanAttrs = savedTypingAttributes
+                cleanAttrs.removeValue(forKey: .backgroundColor)
+                tv.typingAttributes = cleanAttrs
+                return
+            }
+            
+            let sentenceTokenizer = NLTokenizer(unit: .sentence)
+            sentenceTokenizer.string = text
+            
+            sentenceTokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+                let sentenceString = String(text[range])
+                
+                let wordTokenizer = NLTokenizer(unit: .word)
+                wordTokenizer.string = sentenceString
+                
+                var wordCount = 0
+                wordTokenizer.enumerateTokens(in: sentenceString.startIndex..<sentenceString.endIndex) { _, _ in
+                    wordCount += 1
+                    return true
+                }
+                
+                let nsRange = NSRange(range, in: text)
+                
+                if wordCount <= 8 {
+                    storage.addAttribute(.backgroundColor, value: AppTheme.rhythmShortNS, range: nsRange)
+                } else if wordCount > 20 {
+                    storage.addAttribute(.backgroundColor, value: AppTheme.rhythmLongNS, range: nsRange)
+                }
+                
+                return true
+            }
+            
+            storage.endEditing()
+            
+            // Clean dynamic attributes to prevent background color leakage
+            var cleanAttrs = savedTypingAttributes
+            cleanAttrs.removeValue(forKey: .backgroundColor)
+            tv.typingAttributes = cleanAttrs
+        }
+        
+        func clearRhythmHighlights(_ tv: NSTextView) {
+            guard let storage = tv.textStorage else { return }
+            let savedTypingAttributes = tv.typingAttributes
+            
+            storage.beginEditing()
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.endEditing()
+            
+            var cleanAttrs = savedTypingAttributes
+            cleanAttrs.removeValue(forKey: .backgroundColor)
+            tv.typingAttributes = cleanAttrs
+        }
     }
 }
 
@@ -285,54 +549,126 @@ final class AutoTextView: NSTextView {
 
 // MARK: - Image strip (shared from InputEditorView)
 
+// MARK: - Image strip (shared from InputEditorView)
+
 struct ChapterImageStrip: View {
+    @Environment(Book.self) private var book
     @Bindable var chapter: Chapter
     @State private var hoveredImageID: UUID?
+    @State private var isGenerating = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            HStack(spacing: 10) {
-                Text("Images in this chapter:")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .padding(.leading, 4)
+        HStack(spacing: 12) {
+            Text("ARTWORK")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(AppTheme.textSecondary)
+                .padding(.leading, 12)
 
-                ForEach(chapter.images) { img in
-                    ZStack(alignment: .topTrailing) {
-                        Image(nsImage: img.nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 88, height: 66)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
-                            .onHover { hoveredImageID = $0 ? img.id : nil }
-                            .popover(isPresented: .init(
-                                get: { hoveredImageID == img.id },
-                                set: { if !$0 { hoveredImageID = nil } }
-                            ), arrowEdge: .top) {
-                                ImagePreviewPopover(image: img.nsImage, id: img.id.uuidString)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(chapter.images) { img in
+                        ZStack(alignment: .topTrailing) {
+                            Image(nsImage: img.nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 80, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                .shadow(color: .black.opacity(0.12), radius: 3, y: 1.5)
+                                .onHover { hoveredImageID = $0 ? img.id : nil }
+                                .popover(isPresented: .init(
+                                    get: { hoveredImageID == img.id },
+                                    set: { if !$0 { hoveredImageID = nil } }
+                                ), arrowEdge: .top) {
+                                    ImagePreviewPopover(image: img.nsImage, id: img.id.uuidString)
+                                }
+
+                            Button { chapter.images.removeAll { $0.id == img.id } } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(AppTheme.textSecondary, AppTheme.surface)
+                                    .font(.system(size: 14))
+                                    .help("Remove image")
                             }
-
-                        Button { chapter.images.removeAll { $0.id == img.id } } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(AppTheme.textSecondary, AppTheme.border)
-                                .font(.system(size: 16))
+                            .buttonStyle(.plain)
+                            .offset(x: 3, y: -3)
                         }
-                        .buttonStyle(.plain)
-                        .offset(x: 4, y: -4)
-                        .help("Remove image")
                     }
                 }
-
-                Text("(visible in Book Preview →)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
-                    .italic()
+                .padding(.vertical, 6)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+
+            Spacer()
+
+            Button {
+                generateSceneArtwork()
+            } label: {
+                HStack(spacing: 5) {
+                    if isGenerating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    Text(isGenerating ? "Synthesizing..." : "AI Generate Scene")
+                }
+                .help("Generate a conceptual illustration for this chapter using Gemini")
+            }
+            .buttonStyle(SecondaryPillButtonStyle())
+            .disabled(isGenerating || chapter.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(.trailing, 10)
         }
-        .frame(height: 90)
+        .frame(height: 72)
+        .padding(.horizontal, 4)
+        .editorialCard(cornerRadius: 12)
+        .padding(.horizontal, 48)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
+        .background(AppTheme.background)
+    }
+
+    private func generateSceneArtwork() {
+        guard !chapter.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isGenerating = true
+        
+        let ledger = book.coreLedger
+        let text = chapter.rawText
+        
+        Task {
+            do {
+                // 1. Distill scene artwork prompt
+                let visualPrompt = try await ImagenClient.shared.distillVisualPrompt(
+                    text: text,
+                    genre: ledger.genre,
+                    styleNotes: ledger.styleNotes
+                )
+                
+                // 2. Synthesize image via Imagen 3
+                let image = try await ImagenClient.shared.generateImage(prompt: visualPrompt, aspectRatio: "16:9")
+                
+                // 3. Save resulting image to Documents folder
+                ImageManager.shared.ensureMediaDirectoryExists()
+                let fileName = "chapter_\(chapter.id.uuidString.prefix(6))_image_\(UUID().uuidString.prefix(6)).png"
+                let fileURL = ImageManager.mediaDirectory.appendingPathComponent(fileName)
+                
+                if let pngData = image.pngData() {
+                    try pngData.write(to: fileURL, options: .atomic)
+                }
+                
+                await MainActor.run {
+                    let newBookImg = BookImage(nsImage: image, caption: "AI Generated Scene", placement: .inline)
+                    chapter.images.append(newBookImg)
+                    isGenerating = false
+                }
+            } catch {
+                await MainActor.run {
+                    isGenerating = false
+                    let alert = NSAlert()
+                    alert.messageText = "AI Generation Failed"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                }
+            }
+        }
     }
 }
 
