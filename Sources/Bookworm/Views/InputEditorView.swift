@@ -8,7 +8,6 @@ struct InputEditorView: View {
     @Binding var showRight: Bool
     @Binding var reviewMode: Bool
     @AppStorage("bw.readingMode") private var readingMode = true
-    @State private var showSplitDraft = false
 
     // The chapter currently in the viewport (scroll-driven) or explicitly selected.
     private var activeChapter: Chapter? {
@@ -60,37 +59,6 @@ struct InputEditorView: View {
                     }
                     .buttonStyle(GhostToolButtonStyle())
 
-                    Button {
-                        layout.rhythmMode.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "music.note.list")
-                            Text("Rhythm")
-                        }
-                        .help("Toggle Prose Rhythm & Sentence Cadence Visualizer")
-                    }
-                    .buttonStyle(NavPillButtonStyle(isActive: layout.rhythmMode, accent: AppTheme.accentWrite))
-
-                    if activeChapter != nil {
-                        Button { insertImage() } label: {
-                            Image(systemName: "photo.badge.plus")
-                                .help("Insert image into current chapter")
-                        }
-                        .buttonStyle(GhostToolButtonStyle())
-
-                        Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                                showSplitDraft.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "square.split.2x1")
-                                Text("Split Draft")
-                            }
-                            .help("Open side-by-side draft checkpoints and AI rewrite split panel")
-                        }
-                        .buttonStyle(NavPillButtonStyle(isActive: showSplitDraft, accent: AppTheme.accentWrite))
-                    }
                 }
             }
 
@@ -98,17 +66,8 @@ struct InputEditorView: View {
 
             // Show continuous write view when chapters exist, cover editor otherwise.
             if book.selectedChapterID != nil || !book.chapters.isEmpty {
-                HStack(spacing: 0) {
-                    ContinuousWriteView()
-                        .frame(maxWidth: .infinity)
-                    
-                    if showSplitDraft, let active = activeChapter {
-                        Divider().background(AppTheme.border)
-                        SplitDraftView(chapter: active, isPresented: $showSplitDraft)
-                            .frame(width: 440)
-                            .transition(.move(edge: .trailing))
-                    }
-                }
+                ContinuousWriteView()
+                    .frame(maxWidth: .infinity)
                 .background(AppTheme.surface)
             } else {
                 CoverEditorView()
@@ -117,16 +76,6 @@ struct InputEditorView: View {
         }
     }
 
-    private func insertImage() {
-        guard let chapter = activeChapter else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK,
-              let url = panel.url,
-              let img = NSImage(contentsOf: url) else { return }
-        chapter.images.append(BookImage(nsImage: img))
-    }
 }
 
 // MARK: - Focus Mode Exit Button Overlay

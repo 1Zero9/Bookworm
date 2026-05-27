@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import Observation
+import UniformTypeIdentifiers
 
 @Observable
 final class Book {
@@ -121,10 +122,27 @@ final class Book {
         }
     }
 
+    func exportMarkdownFolder() {
+        let panel = NSSavePanel()
+        panel.title = "Export Manuscript as Markdown"
+        panel.nameFieldStringValue = markdownExportFolderName
+        panel.canCreateDirectories = true
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try writeMarkdownExport(to: url)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            showAlert("Could not export Markdown: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Private
 
     private func performSave(to url: URL) {
         do {
+            try createBackupIfNeeded(for: url)
             let data = try JSONEncoder().encode(toFile())
             try data.write(to: url, options: .atomic)
             lastSavedAt = Date()
@@ -146,6 +164,117 @@ final class Book {
             alert.messageText = message
             alert.runModal()
         }
+    }
+
+    private func createBackupIfNeeded(for url: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return }
+
+        let backupDir = url.deletingLastPathComponent().appendingPathComponent("Bookworm Backups", isDirectory: true)
+        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let timestamp = Self.backupTimestampFormatter.string(from: Date())
+        let backupURL = backupDir.appendingPathComponent("\(baseName) - \(timestamp).bookworm")
+
+        try fm.copyItem(at: url, to: backupURL)
+        try pruneBackups(in: backupDir, baseName: baseName, keeping: 25)
+    }
+
+    private func pruneBackups(in backupDir: URL, baseName: String, keeping limit: Int) throws {
+        let fm = FileManager.default
+        let backups = try fm.contentsOfDirectory(
+            at: backupDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter {
+            $0.pathExtension == "bookworm"
+            && $0.deletingPathExtension().lastPathComponent.hasPrefix("\(baseName) - ")
+        }
+        .sorted {
+            let left = ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+            let right = ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+            return left > right
+        }
+
+        for oldBackup in backups.dropFirst(limit) {
+            try fm.removeItem(at: oldBackup)
+        }
+    }
+
+    private func writeMarkdownExport(to folderURL: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+        let info = """
+        # \(markdownTitle)
+
+        Author: \(author.isEmpty ? "Unknown" : author)
+        Chapters: \(chapters.count)
+        Words: \(totalWordCount)
+        Exported: \(Self.exportTimestampFormatter.string(from: Date()))
+
+        This folder is a portable Markdown export. Keep the `.bookworm` file as the editable Bookworm source.
+        """
+        try info.write(
+            to: folderURL.appendingPathComponent("00 - Book Info.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        for (index, chapter) in chapters.sorted(by: { $0.order < $1.order }).enumerated() {
+            let number = String(format: "%03d", index + 1)
+            let filename = "\(number) - \(Self.safeFilename(chapter.title)).md"
+            let body = """
+            # \(chapter.title)
+
+            \(chapter.rawText)
+            """
+            try body.write(
+                to: folderURL.appendingPathComponent(filename),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+    }
+
+    private var markdownExportFolderName: String {
+        "\(Self.safeFilename(title.isEmpty ? "Untitled Novel" : title)) Markdown"
+    }
+
+    private var markdownTitle: String {
+        title.isEmpty ? "Untitled Novel" : title
+    }
+
+    private var totalWordCount: Int {
+        chapters.reduce(0) {
+            $0 + $1.rawText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+        }
+    }
+
+    private static let backupTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
+        return formatter
+    }()
+
+    private static let exportTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static func safeFilename(_ value: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+            .union(.newlines)
+            .union(.controlCharacters)
+        let cleaned = value
+            .components(separatedBy: invalid)
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(80))
     }
 }
 

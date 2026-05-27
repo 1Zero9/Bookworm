@@ -9,7 +9,10 @@ let package = Package(
             name: "Bookworm",
             path: "Sources/Bookworm",
             exclude: ["Media"],
-            resources: [.copy("Assets")]
+            resources: [
+                .copy("Assets"),
+                .copy("Resources")
+            ]
         )
     ]
 )

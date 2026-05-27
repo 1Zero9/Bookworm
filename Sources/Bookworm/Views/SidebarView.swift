@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(Book.self) private var book
+    @ObservedObject private var launchStore = LaunchStore.shared
     @State private var renamingID: UUID? = nil
     @State private var renameText: String = ""
     @State private var showLibrary = false
@@ -25,6 +26,7 @@ struct SidebarView: View {
                     HStack(spacing: 6) {
                         IconToolButton(icon: "clock.arrow.circlepath", tip: "Library — recent books") { showLibrary = true }
                         IconToolButton(icon: "folder", tip: "Open… (⌘O)") { book.open() }
+                        IconToolButton(icon: "square.and.arrow.up", tip: "Export Markdown") { book.exportMarkdownFolder() }
                         SaveButton(book: book)
                     }
                 }
@@ -174,6 +176,20 @@ struct SidebarView: View {
             .buttonStyle(PrimaryPillButtonStyle(color: AppTheme.accentWrite))
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
+
+            Button {
+                launchStore.exitToLauncher()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "house")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Home")
+                }
+                .help("Return to launcher")
+            }
+            .buttonStyle(SecondaryPillButtonStyle())
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
 
             HStack {
                 Button { showSettings = true } label: {

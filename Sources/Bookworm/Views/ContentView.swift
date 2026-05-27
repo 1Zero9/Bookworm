@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var bookZoom: CGFloat = 1.0
     @State private var showingMergePopover = false
 
-    enum RightTab { case book, narrate, publish }
+    enum RightTab { case book }
 
     var body: some View {
         Group {
@@ -156,9 +156,6 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxHeight: .infinity)
-
-                    PlaybackBar()
-                        .frame(height: 60)
                 }
                 .transition(.opacity)
             }
@@ -189,35 +186,19 @@ struct ContentView: View {
     private func rightPanel(fillsRest: Bool) -> some View {
         VStack(spacing: 0) {
             PanelHeader(
-                step: rightTab == .narrate ? "3" : rightTab == .publish ? "4" : "2",
-                label: rightTab == .narrate ? "AUDIOBOOK STUDIO"
-                     : rightTab == .publish ? "PUBLISH"
-                     : "BOOK VIEW",
-                subtitle: rightTab == .narrate ? "experience your story narrated"
-                        : rightTab == .publish ? "export your finished book"
-                        : "preview your novel",
-                accent: rightTab == .narrate ? AppTheme.accentNarrate
-                      : rightTab == .publish ? AppTheme.accentPublish
-                      : AppTheme.accentWrite
+                step: "2",
+                label: "BOOK VIEW",
+                subtitle: "preview your novel",
+                accent: AppTheme.accentWrite
             ) {
                 HStack(spacing: 4) {
-                    PanelTab(label: "Book",    icon: "book",                tab: .book,    accent: AppTheme.accentWrite,   current: $rightTab)
-                    PanelTab(label: "Narrate", icon: "mic",                 tab: .narrate, accent: AppTheme.accentNarrate, current: $rightTab)
-                    PanelTab(label: "Publish", icon: "square.and.arrow.up", tab: .publish, accent: AppTheme.accentPublish, current: $rightTab)
-
-                    if rightTab == .book {
-                        zoomControls
-                    }
+                    zoomControls
                 }
             }
 
             Divider().background(AppTheme.border)
 
-            switch rightTab {
-            case .book:    BookPreviewView(zoom: bookZoom)
-            case .narrate: AudiobookStudioView().background(AppTheme.surface)
-            case .publish: PublishView()
-            }
+            BookPreviewView(zoom: bookZoom)
         }
         .frame(maxWidth: fillsRest ? .infinity : layout.rightWidth)
         .frame(minWidth: fillsRest ? 0 : 280)
@@ -325,7 +306,7 @@ private struct LayoutBar: View {
                             .font(.system(size: 10, weight: .semibold))
                         Text("Book Preview")
                     }
-                    .help("Toggle right book rendering, narration script & PDF publishing preview panel")
+                    .help("Toggle right book preview panel")
                 }
                 .buttonStyle(NavPillButtonStyle(isActive: layout.showRight, accent: AppTheme.success))
             }
@@ -403,29 +384,6 @@ struct PanelHeader<Trailing: View>: View {
         .padding(.horizontal, 14)
         .frame(height: 52)
         .background(AppTheme.background)
-    }
-}
-
-// MARK: - Tab button
-
-private struct PanelTab: View {
-    let label: String
-    let icon: String
-    let tab: ContentView.RightTab
-    let accent: Color
-    @Binding var current: ContentView.RightTab
-    var isActive: Bool { current == tab }
-
-    var body: some View {
-        Button { current = tab } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 10, weight: .medium))
-                Text(label)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-        }
-        .buttonStyle(NavPillButtonStyle(isActive: isActive, accent: accent))
     }
 }
 

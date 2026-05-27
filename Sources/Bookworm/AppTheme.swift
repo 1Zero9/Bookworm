@@ -179,8 +179,8 @@ enum AppTheme {
     }()
 
     // MARK: - Version
-    static let version = "v2.7.36"
-    static let build = "39"
+    static let version = "v2.7.45"
+    static let build = "52"
 }
 
 // MARK: - Glass Panel Modifier
@@ -545,75 +545,6 @@ extension NSColor {
     }
 }
 
-// MARK: - Snappy Glassmorphic SwiftUI Tooltips
-// Custom-engineered hover tooltips with a highly responsive 200ms delay,
-// bypassing macOS standard 2-second tooltip latency.
-
-struct TooltipModifier: ViewModifier {
-    let text: String
-    @State private var isHovered = false
-    @State private var workItem: DispatchWorkItem? = nil
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                workItem?.cancel()
-                if hovering {
-                    let task = DispatchWorkItem {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            isHovered = true
-                        }
-                    }
-                    workItem = task
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20, execute: task)
-                } else {
-                    withAnimation(.easeOut(duration: 0.10)) {
-                        isHovered = false
-                    }
-                }
-            }
-            .overlay(
-                GeometryReader { geo in
-                    if isHovered && !text.isEmpty {
-                        Text(text)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textPrimary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                .ultraThinMaterial,
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .stroke(AppTheme.border, lineWidth: 1)
-                            )
-                            .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
-                            .fixedSize()
-                            .position(x: geo.size.width / 2, y: -22)
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    }
-                }
-                .allowsHitTesting(false)
-            )
-    }
-}
-
-extension View {
-    /// Overrides standard SwiftUI `.help` to use an advanced snappy tooltip overlay,
-    /// showing tooltips in 200ms instead of the standard 2-second macOS delay.
-    @ViewBuilder
-    func help(_ text: String) -> some View {
-        self.modifier(TooltipModifier(text: text))
-    }
-
-    /// Overrides standard SwiftUI generic `.help` for generic StringProtocol types.
-    @ViewBuilder
-    func help<S>(_ text: S) -> some View where S : StringProtocol {
-        self.modifier(TooltipModifier(text: String(text)))
-    }
-}
-
 // MARK: - Curated Editorial Accent Themes for the World Bible
 
 enum WorldAccent: String, CaseIterable, Codable {
@@ -660,5 +591,3 @@ enum WorldAccent: String, CaseIterable, Codable {
         ))
     }
 }
-
-

@@ -131,18 +131,13 @@ struct ContinuousWriteView: View {
                     set: { heights[chapter.id] = $0 }
                 ),
                 focusMode: layout.focusMode,
-                rhythmMode: layout.rhythmMode,
+                rhythmMode: false,
                 formatMode: book.formatMode
             )
             .frame(width: colWidth)
             .frame(height: max(200, heights[chapter.id] ?? 400))
             .shadow(color: readingMode ? .black.opacity(0.04) : .clear, radius: 8, x: 0, y: 3)
             .frame(maxWidth: .infinity, alignment: .center)
-
-            // ── image strip (if any) ──
-            if !isEmail && !chapter.images.isEmpty {
-                ChapterImageStrip(chapter: chapter)
-            }
 
             // ── chapter break gap ──
             Color.clear.frame(height: 48)
@@ -160,20 +155,23 @@ struct ContinuousWriteView: View {
 
     @ViewBuilder
     private func chapterDivider(title: String, emoji: String) -> some View {
-        HStack(spacing: 12) {
-            Rectangle().fill(AppTheme.border).frame(height: 1)
-            HStack(spacing: 8) {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Rectangle().fill(AppTheme.border).frame(height: 1)
                 Text(emoji)
                     .font(.system(size: 14))
                     .foregroundStyle(AppTheme.accentWrite)
-                Text(title.uppercased())
-                    .font(AppTheme.editorialFont(13, weight: .bold))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .tracking(2.0)
-                    .lineLimit(1)
+                Rectangle().fill(AppTheme.border).frame(height: 1)
             }
-            .padding(.horizontal, 10)
-            Rectangle().fill(AppTheme.border).frame(height: 1)
+
+            Text(title.uppercased())
+                .font(AppTheme.editorialFont(13, weight: .bold))
+                .foregroundStyle(AppTheme.textPrimary)
+                .tracking(1.4)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 560)
         }
         .padding(.horizontal, 48)
         .padding(.top, 40)
@@ -211,7 +209,7 @@ struct AutoSizingTextEditor: NSViewRepresentable {
     var formatMode: BookFormatMode
 
     private static let placeholder =
-        "Write your scene here — prose, dialogue, descriptions.\n\nPress Play below to listen to your prose narrated in high-fidelity."
+        "Write your scene here — prose, dialogue, descriptions."
 
     func makeNSView(context: Context) -> AutoTextView {
         let tv = AutoTextView()
@@ -544,131 +542,6 @@ final class AutoTextView: NSTextView {
     override func didChangeText() {
         super.didChangeText()
         invalidateIntrinsicContentSize()
-    }
-}
-
-// MARK: - Image strip (shared from InputEditorView)
-
-// MARK: - Image strip (shared from InputEditorView)
-
-struct ChapterImageStrip: View {
-    @Environment(Book.self) private var book
-    @Bindable var chapter: Chapter
-    @State private var hoveredImageID: UUID?
-    @State private var isGenerating = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("ARTWORK")
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(AppTheme.textSecondary)
-                .padding(.leading, 12)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(chapter.images) { img in
-                        ZStack(alignment: .topTrailing) {
-                            Image(nsImage: img.nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 80, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                .shadow(color: .black.opacity(0.12), radius: 3, y: 1.5)
-                                .onHover { hoveredImageID = $0 ? img.id : nil }
-                                .popover(isPresented: .init(
-                                    get: { hoveredImageID == img.id },
-                                    set: { if !$0 { hoveredImageID = nil } }
-                                ), arrowEdge: .top) {
-                                    ImagePreviewPopover(image: img.nsImage, id: img.id.uuidString)
-                                }
-
-                            Button { chapter.images.removeAll { $0.id == img.id } } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(AppTheme.textSecondary, AppTheme.surface)
-                                    .font(.system(size: 14))
-                                    .help("Remove image")
-                            }
-                            .buttonStyle(.plain)
-                            .offset(x: 3, y: -3)
-                        }
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-
-            Spacer()
-
-            Button {
-                generateSceneArtwork()
-            } label: {
-                HStack(spacing: 5) {
-                    if isGenerating {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    Text(isGenerating ? "Synthesizing..." : "AI Generate Scene")
-                }
-                .help("Generate a conceptual illustration for this chapter using Gemini")
-            }
-            .buttonStyle(SecondaryPillButtonStyle())
-            .disabled(isGenerating || chapter.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .padding(.trailing, 10)
-        }
-        .frame(height: 72)
-        .padding(.horizontal, 4)
-        .editorialCard(cornerRadius: 12)
-        .padding(.horizontal, 48)
-        .padding(.top, 16)
-        .padding(.bottom, 24)
-        .background(AppTheme.background)
-    }
-
-    private func generateSceneArtwork() {
-        guard !chapter.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        isGenerating = true
-        
-        let ledger = book.coreLedger
-        let text = chapter.rawText
-        
-        Task {
-            do {
-                // 1. Distill scene artwork prompt
-                let visualPrompt = try await ImagenClient.shared.distillVisualPrompt(
-                    text: text,
-                    genre: ledger.genre,
-                    styleNotes: ledger.styleNotes
-                )
-                
-                // 2. Synthesize image via Imagen 3
-                let image = try await ImagenClient.shared.generateImage(prompt: visualPrompt, aspectRatio: "16:9")
-                
-                // 3. Save resulting image to Documents folder
-                ImageManager.shared.ensureMediaDirectoryExists()
-                let fileName = "chapter_\(chapter.id.uuidString.prefix(6))_image_\(UUID().uuidString.prefix(6)).png"
-                let fileURL = ImageManager.mediaDirectory.appendingPathComponent(fileName)
-                
-                if let pngData = image.pngData() {
-                    try pngData.write(to: fileURL, options: .atomic)
-                }
-                
-                await MainActor.run {
-                    let newBookImg = BookImage(nsImage: image, caption: "AI Generated Scene", placement: .inline)
-                    chapter.images.append(newBookImg)
-                    isGenerating = false
-                }
-            } catch {
-                await MainActor.run {
-                    isGenerating = false
-                    let alert = NSAlert()
-                    alert.messageText = "AI Generation Failed"
-                    alert.informativeText = error.localizedDescription
-                    alert.runModal()
-                }
-            }
-        }
     }
 }
 

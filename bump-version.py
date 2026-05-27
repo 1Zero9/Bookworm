@@ -40,7 +40,7 @@ def get_current_version_and_build():
 
 def bump_version_string(version_str):
     parts = version_str.split('.')
-    if len(parts) == 3:
+    if len(parts) >= 3:
         try:
             major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
             patch += 1

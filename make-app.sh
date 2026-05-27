@@ -43,6 +43,9 @@ cp ".build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
 # Assets (icon.png used at runtime)
 cp -r "Sources/Bookworm/Assets" "${RESOURCES}/"
+if [ -d "Sources/Bookworm/Resources" ]; then
+    cp -r "Sources/Bookworm/Resources" "${RESOURCES}/"
+fi
 
 # Convert icon.png → AppIcon.icns
 if [ -f "${ICON_PNG}" ]; then

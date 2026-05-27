@@ -1,56 +1,55 @@
-# Bookworm — The Modern Creative Writing Studio (v2.7.36)
+# Bookworm — A Quiet Novel Writing Desk (v2.7.44)
 
-[![Version](https://img.shields.io/badge/version-2.7.36-C9963A?style=flat-square)](https://github.com/1Zero9/Bookworm)
-[![Build](https://img.shields.io/badge/build-39-7C8CFF?style=flat-square)](https://github.com/1Zero9/Bookworm)
+[![Version](https://img.shields.io/badge/version-2.7.45-C9963A?style=flat-square)](https://github.com/1Zero9/Bookworm)
+[![Build](https://img.shields.io/badge/build-52-7C8CFF?style=flat-square)](https://github.com/1Zero9/Bookworm)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014.0+-000000?style=flat-square)](https://developer.apple.com/macos/)
 
-Bookworm is a premium, distraction-free macOS writing application tailored for novelists, screenwriters, and creative storytellers. Moving away from standard text editors and vintage gimmicks, it provides a literary-inspired **"Soft Editorial"** creative workspace that harmonizes long-form manuscript organization, immersive spatial design, secure local AI assistance, and professional publication workflows.
+Bookworm is a private macOS writing app for drafting, organising, and revising a novel. It is designed around the daily work of writing: open the book, move through chapters, write in a calm manuscript view, keep supporting notes nearby, and preview the result without turning the workspace into a production suite.
 
 ---
 
-## 🌟 Core Features
+## Core Features
 
-### 1. Plot Timeline Swimlane Visualizer
-An interactive narrative grid allowing authors to map out story beats across dynamic swimlanes.
-- **Horizontal Swimlane Grid**: Rows represent narrative threads (Subplots) and columns represent Chapters.
-- **Interactive Editing**: Double-click or trigger popovers to refine titles, summaries, and presence of character tags per narrative node.
-- **Gemini Plot Auto-Mapper**: Automatically scans chapter prose using local LLM contexts to extract and map narrative beats onto the timeline.
+### 1. Quiet Manuscript Editor
+Write across a continuous multi-chapter manuscript with a reading-width column, simple chapter dividers, and a left sidebar for book structure.
 
-### 2. Immersive Focus Mode (Zen Canvas)
-A distraction-free writing environment built to inspire deep creative flow.
-- **Minimalist Interface**: Smoothly slides and fades away all structural sidebars, progress indicators, and UI chrome on command.
-- **Keystroke Acoustics DSP**: Synthesizes mechanical typewriter sounds in real-time. Features programmatically generated key-clicks and carriage-return chimes utilizing custom bandpass filters and sine sweeps over native low-latency macOS `AVAudioEngine` nodes.
-- **Visual Sensory Feedback**: Gentle, pulsing cursor glows that coordinate with typing speed and smooth vertical midpoint scroll-centering.
+### 2. Novel-First Launcher
+Start a new novel or open an existing `.bookworm` file. Recent books stay visible without template grids or production-studio decisions.
 
-### 3. Multi-Version Draft Splitting & Parallel Rewriting
-A sophisticated draft comparison workspace that makes editing structured and visual.
-- **Split-Screen Editor**: View, compare, and modify two drafts side-by-side.
-- **Dynamic Programming (DP) Diffing**: Computes word-level and paragraph-level changes using a custom Longest Common Subsequence (LCS) algorithm, highlighting deletions in red and additions in green.
-- **Local AI Rewriting**: Refine draft styles inline using curated presets (e.g., *"Show, Don't Tell"*, *"Gothic Tone"*) or custom structural instructions.
+### 3. Focus Mode
+Switch into a minimal writing surface when you want the interface to get out of the way.
 
-### 4. The Visual Director (Imagen Illustration)
-Bring manuscripts to life with visual anchors.
-- **Prose Distilling**: Parses chapter narratives and character ledger tags using Gemini models to synthesize evocative artistic prompts.
-- **Imagen 3.0 Integration**: Leverages Google's high-fidelity Imagen model to render watercolor, oil canvas, or charcoal scene illustrations and cover designs.
-- **Asynchronous Assets**: Downloads generated covers directly to `~/Documents/Bookworm/Media/` and links them dynamically into the active manuscript.
+### 4. Book Preview
+Keep an optional rendered book preview open beside the manuscript, with zoom controls for checking the feel of the pages.
+
+### 5. Planning and Revision Tools
+World Bible, storyboard, timeline, draft history, and Red Pen review tools remain available as supporting workspaces rather than daily writing distractions.
+
+### 6. Protected Native Saves and Markdown Export
+Bookworm keeps `.bookworm` as the editable source file, creates timestamped backups before overwriting existing project files, and can export a portable chapter-by-chapter Markdown folder.
+
+### 7. App Help and Version History
+Native macOS About and Help windows provide copyright information, writing guidance, and bundled version history.
 
 ---
 
-## 🔒 Security & Concurrency Protection
+## Security & Local Data
 
 - **Secure Keychain Key Vault**: User-provided API credentials are encrypted and stored in the secure macOS Keychain via a native thread-safe `KeychainHelper` wrapper. Plaintext files and insecure configurations in `UserDefaults` are automatically migrated and wiped on first launch.
-- **Mechanical DSP Concurrency Lock**: Key-click audio engines utilize low-level `NSLock` synchronization to guarantee thread-safe parameter sweeps between active rendering loops and main-thread keyboard handlers, eliminating audio race conditions.
-- **JSON Code Fence Trimming**: Hardened AI response parsers feature regex cleaning routines to safely strip markdown code blocks and handle variations in returned structured JSON data.
+- **Local Book Files**: Manuscripts are saved as `.bookworm` files and can be opened from disk or recent books.
+- **Automatic Backups**: Existing `.bookworm` files are copied to a local `Bookworm Backups` folder before they are overwritten.
+- **Portable Markdown Export**: Manuscripts can be exported as a folder of chapter Markdown files for long-term portability.
+- **Optional AI Settings**: API credentials, where used by supporting review/planning tools, are stored in the macOS Keychain.
 
 ---
 
-## 🎨 Design Philosophy: "Soft Editorial"
+## Design Philosophy
 
-Bookworm follows a tailored, high-fidelity design language engineered for readability and long writing sessions:
+Bookworm follows a restrained editorial design language for long writing sessions:
 - **Obsidian Dark Mode**: Deep background space (`#0B0F19`), surface panels (`#131A26`), and thin separators (`#1E2536`).
 - **Warm Ivory Light Mode**: Warm background tones (`#F8F7F4`) reminiscent of premium book bindings, minimizing eye strain.
 - **Responsive Geometry**: Translucent sidebar panels leveraging native macOS blur materials (`.glassPanel`), rounded drop-shadow cards (`.editorialCard`), and glowing border states.
-- **Visual Tooltips**: All button controls, sidebar tabs, and editing panels incorporate native AppKit-backed hover labels to maximize clarity.
+- **Reduced Chrome**: The primary writing workflow avoids permanent audio, image generation, and publishing controls.
 
 ---
 
@@ -78,11 +77,12 @@ When the build is triggered:
 ## 📁 Repository Structure
 
 - `Sources/Bookworm/` — Core Swift source code.
-  - `Engine/` — Core services: `GeminiClient`, `TypewriterAudioEngine`, `KeychainHelper`, `ContextManager`.
+  - `Engine/` — Core services: `GeminiClient`, `KeychainHelper`, `ContextManager`, local stores.
   - `Models/` — Data architecture: `Book`, `Subplot`, `DraftVersion`, `PlotTimeline`.
-  - `Views/` — SwiftUI Views: `TimelineVisualizerView`, `SplitDraftView`, `ContinuousWriteView`, `AppTheme`.
+  - `Views/` — SwiftUI Views: `StudioLauncherView`, `ContentView`, `ContinuousWriteView`, `BookPreviewView`, planning and review views.
 - `RELEASE_NOTES.md` — History of version increments and feature logs.
 - `version.txt` — Simple text file storing the current semantic version.
 - `build.txt` — Simple text file storing the current build count.
 - `bump-version.py` — Automated Python engine that updates source code, readmes, and logs.
 - `make-app.sh` — The macOS app packaging and installation pipeline.
+- `make-installer.sh` — Builds a `.pkg` installer from the packaged app bundle.

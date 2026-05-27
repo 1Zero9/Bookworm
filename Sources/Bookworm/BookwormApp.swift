@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct BookwormApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var launchStore = LaunchStore.shared
     @State private var recentBooks: [RecentBook] = []
 
@@ -42,6 +43,12 @@ struct BookwormApp: App {
         }
         .defaultSize(width: 1400, height: 900)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Bookworm") {
+                    openWindow(id: "about-bookworm")
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Book") {
                     _ = launchStore.createNewBook(format: .novel)
@@ -89,6 +96,27 @@ struct BookwormApp: App {
                 Button("Save As…") { launchStore.currentBook.saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
             }
+
+            CommandGroup(replacing: .help) {
+                Button("Bookworm Help") {
+                    openWindow(id: "bookworm-help")
+                }
+                .keyboardShortcut("?")
+
+                Button("Version History") {
+                    openWindow(id: "bookworm-help")
+                }
+            }
         }
+
+        Window("About Bookworm", id: "about-bookworm") {
+            AboutBookwormView()
+        }
+        .windowResizability(.contentSize)
+
+        Window("Bookworm Help & Version History", id: "bookworm-help") {
+            BookwormHelpView()
+        }
+        .windowResizability(.contentSize)
     }
 }
